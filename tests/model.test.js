@@ -160,6 +160,7 @@ test("refreshDelay is calm, quicker near a meeting, and backs off offline", () =
   assert.equal(Model.refreshDelay("offline", 1), 60000)
   assert.equal(Model.refreshDelay("offline", 2), 2 * 60000)
   assert.equal(Model.refreshDelay("offline", 9), 8 * 60000)
+  assert.equal(Model.refreshDelay("keyring", 1), 60000)
 })
 
 test("errorState maps the helper's error kinds", () => {

@@ -309,7 +309,12 @@ main{{max-width:28em;text-align:center}}h1{{font-size:1.4em;font-weight:600}}p{{
 
 # ---------- Graph ----------
 
-def graph_get(opts, url):
+def forget_access_token():
+    with contextlib.suppress(OSError):
+        os.remove(os.path.join(RUNTIME, "access.json"))
+
+
+def graph_get(opts, url, retried=False):
     token = access_token(opts)
     req = urllib.request.Request(url, headers={
         "Authorization": f"Bearer {token}",
@@ -320,9 +325,12 @@ def graph_get(opts, url):
             return json.load(r)
     except urllib.error.HTTPError as e:
         if e.code == 401:
-            # A revoked or expired session; the next refresh will tell us which.
-            with contextlib.suppress(OSError):
-                os.remove(os.path.join(RUNTIME, "access.json"))
+            # The cached access token went stale early (revoked, or the clock
+            # jumped). The refresh token may still be good: try it once, and
+            # only ask to sign in again if that fails too.
+            forget_access_token()
+            if not retried:
+                return graph_get(opts, url, retried=True)
             raise Failure("signin", "Microsoft asked to sign in again")
         if e.code == 403:
             raise Failure("consent", "the app isn't allowed to read your calendar")
@@ -478,8 +486,7 @@ def main(argv):
             emit(today(opts, day))
         elif cmd == "logout":
             keyring_clear()
-            with contextlib.suppress(OSError):
-                os.remove(os.path.join(RUNTIME, "access.json"))
+            forget_access_token()
             emit({"signedIn": False})
         elif cmd == "parse":
             day = dt.date.fromisoformat(rest[1]) if len(rest) > 1 else dt.date.today()

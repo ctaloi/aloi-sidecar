@@ -163,7 +163,7 @@ function pad(n) { return n < 10 ? "0" + n : String(n) }
 // when a meeting is about to start (so a last-minute move shows up), and a
 // patient backoff when offline.
 function refreshDelay(state, failures, minutesToNext) {
-  if (state === "offline" || state === "error")
+  if (state === "offline" || state === "error" || state === "keyring")
     return Math.min(15, Math.pow(2, Math.max(0, Math.min(failures || 1, 4)) - 1)) * MINUTE
   if (minutesToNext !== null && minutesToNext !== undefined && minutesToNext >= 0 && minutesToNext <= 15)
     return 2 * MINUTE

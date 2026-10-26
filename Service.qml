@@ -176,7 +176,9 @@ Item {
         if (reply.signedIn) root.refresh()
         else root.phase = "signedOut"
       } else {
+        // Most often the keyring isn't up yet at login. Try again shortly.
         root.failed(reply)
+        root.scheduleRefresh()
       }
     }
   }
@@ -199,7 +201,12 @@ Item {
   Timer {
     id: refreshTimer
     repeat: false
-    onTriggered: if (root.phase !== "signedOut" && root.phase !== "signingIn" && root.phase !== "consent") root.refresh()
+    onTriggered: {
+      if (root.phase === "signedOut" || root.phase === "signingIn" || root.phase === "consent") return
+      // Never got as far as a calendar: ask whether we're signed in first.
+      if (!root.hasData && (root.phase === "keyring" || root.phase === "error")) statusProcess.running = true
+      else root.refresh()
+    }
   }
 
   // Ticks on each wall-clock minute. A long gap between ticks means the
