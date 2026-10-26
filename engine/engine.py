@@ -23,6 +23,10 @@ import numpy as np
 import sherpa_onnx
 from aiohttp import web
 
+import calls
+import wrapup
+from notion import Notion, NotionError
+
 RATE = 16000
 CHUNK = 1600  # 100 ms of samples per read
 PORT = int(os.environ.get("SIDECAR_PORT", 8777))
@@ -30,6 +34,10 @@ HERE = Path(__file__).resolve().parent
 MODELS = Path.home() / ".local/share/aloi-sidecar/models"
 PARAKEET = MODELS / "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
 MEETINGS = Path(os.environ.get("SIDECAR_MEETINGS", Path.home() / ".local/share/aloi-sidecar/meetings"))
+TRASH = MEETINGS.parent / "trash"  # deleted meetings go here, never straight to nothing
+SETTINGS = Path(os.environ.get("SIDECAR_SETTINGS", Path.home() / ".config/aloi-sidecar/settings.json"))
+DEFAULTS = {"watch_calls": True}
+END_AFTER = 120  # seconds after a call lets go of the mic before its meeting ends by itself
 KEY_FILE = Path.home() / ".config/aloi-sidecar/api-key"  # optional; else SDK defaults (ANTHROPIC_API_KEY etc.)
 RECOVER_WINDOW = 2 * 60 * 60  # a meeting left live by a crash comes back paused if its last line is this recent
 ME = "Chris"
@@ -107,7 +115,7 @@ class Meeting:
             folder = MEETINGS / f"{mid}-{n}"
             n += 1
         meta = {"id": folder.name, "title": title, "started": now, "ended": None, "state": "live",
-                "event": event, "people": [], "notion": None}
+                "event": event, "people": [], "notion": None, "skipped": False}
         m = cls(folder, meta, [])
         return m
 
@@ -144,7 +152,30 @@ class Meeting:
         return segs[-1]["end"] if segs else self.meta["started"]
 
     def summary(self):
-        return {**self.meta, "lines": self.lines()}
+        w = self.wrapup()
+        return {**self.meta, "lines": self.lines(),
+                "wrapup": w["state"] if w else None, "edited": bool(w and w.get("edited"))}
+
+    # The wrap-up lives beside the transcript: the model's draft and, kept
+    # apart from it, whatever Chris changed, so a redraft never quietly
+    # throws his edits away.
+    def wrapup(self):
+        path = self.folder / "wrapup.json"
+        if not hasattr(self, "_wrapup"):
+            self._wrapup = json.loads(path.read_text()) if path.exists() else None
+        return self._wrapup
+
+    def save_wrapup(self, w):
+        self._wrapup = w
+        self.folder.mkdir(parents=True, exist_ok=True)
+        tmp = self.folder / "wrapup.json.tmp"
+        tmp.write_text(json.dumps(w, indent=1))
+        tmp.replace(self.folder / "wrapup.json")
+
+    def notes(self):
+        """The wrap-up as it stands: Chris's edits if he made any, else the draft."""
+        w = self.wrapup()
+        return (w.get("edited") or w.get("draft")) if w else None
 
     def save(self):
         # Written beside and renamed over, so a crash never leaves half a file.
@@ -191,6 +222,14 @@ class Sidecar:
             m = Meeting.load(meta.parent)
             self.meetings[m.id] = m
         self.recover()
+        self.notion = Notion()
+        self.drafting = {}  # meeting id -> task
+        self.sending = {}
+        self.settings = {**DEFAULTS, **(json.loads(SETTINGS.read_text()) if SETTINGS.exists() else {})}
+        self.call = None  # {"app", "since"} while another app holds the mic
+        self.prompt = None  # the notification task asking about the call
+        self.watch = calls.CallWatch(lambda: [c.pid for c in self.channels if c.pid],
+                                     self.call_started, self.call_ended)
         self.ask_blocks = []  # frozen transcript blocks already sent to Claude
         self.ask_sent = 0  # number of segments covered by ask_blocks
         if KEY_FILE.exists():
@@ -202,6 +241,10 @@ class Sidecar:
         """A meeting left live by a crash or a reboot comes back paused if it
         was recent, and is ended (at its last line) if it wasn't."""
         for m in self.meetings.values():
+            w = m.wrapup()
+            if w and w["state"] == "drafting":  # the engine stopped part way through
+                w.update(state="failed", error="Drafting was interrupted. Try again.")
+                m.save_wrapup(w)
             if m.meta["state"] == "ended":
                 continue
             if self.current is None and time.time() - m.last_line_end() < RECOVER_WINDOW:
@@ -223,10 +266,66 @@ class Sidecar:
     def state(self):
         return {"type": "state", "listening": self.listening,
                 "current": self.current.id if self.current else None,
-                "channels": [{"label": c.label, "speaker": c.speaker} for c in self.channels]}
+                "channels": [{"label": c.label, "speaker": c.speaker} for c in self.channels],
+                "call": self.call, "settings": self.settings}
+
+    def set_settings(self, changes):
+        for key in DEFAULTS:
+            if key in changes:
+                self.settings[key] = type(DEFAULTS[key])(changes[key])
+        SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+        tmp = SETTINGS.with_suffix(".tmp")
+        tmp.write_text(json.dumps(self.settings, indent=1))
+        tmp.replace(SETTINGS)
+        self.broadcast(self.state())
+
+    # ---- noticing calls ----
+
+    async def call_started(self, app):
+        """Another app took the mic. If Sidecar isn't already listening, it
+        asks, once, with a notification; clicking it starts a meeting."""
+        self.call = {"app": app, "since": time.time()}
+        self.broadcast(self.state())
+        if self.listening or not self.settings["watch_calls"]:
+            return
+        self.notify(self.ask_to_listen(app))
+
+    async def call_ended(self, app):
+        """The call let go of the mic. A meeting that's listening gets an
+        End prompt, and ends by itself after two quiet minutes."""
+        self.call = None
+        self.broadcast(self.state())
+        if self.listening and self.current:
+            self.notify(self.ask_to_end(self.current, app))
+        else:
+            self.notify(None)
+
+    def notify(self, coro):
+        if self.prompt:
+            self.prompt.cancel()
+        self.prompt = asyncio.create_task(coro) if coro else None
+
+    async def ask_to_listen(self, app):
+        choice = await calls.notify(f"{app} is using your mic", "Listen to this call with Sidecar?",
+                                    [("default", "Listen"), ("ignore", "Not now")])
+        if choice == "default" and not self.listening:
+            await self.start_meeting(f"{app} call at {datetime.now():%-I:%M}"
+                                     if app in calls.CALL_APPS else None)
+
+    async def ask_to_end(self, m, app):
+        heard = m.lines()
+        choice = await calls.notify(f"Sounds like the {app} call ended",
+                                    f"End “{m.meta['title']}”? It ends by itself in two minutes if nothing more is said.",
+                                    [("default", "End meeting"), ("keep", "Keep listening")], timeout=END_AFTER)
+        if self.current is not m or self.call:
+            return  # something else happened meanwhile: another call, or it ended already
+        if choice == "default" or (choice is None and m.lines() == heard):
+            await self.end_meeting()
 
     async def start_meeting(self, title=None, event=None):
         await self.end_meeting()
+        if self.prompt:  # a "Listen?" notification is answered by starting
+            self.notify(None)
         m = Meeting.create(title or (event or {}).get("subject") or ad_hoc_title(), event)
         self.meetings[m.id] = m
         self.current = m
@@ -236,6 +335,9 @@ class Sidecar:
         return m
 
     async def end_meeting(self):
+        """Ends the meeting that's on. One that was actually talked in gets
+        its wrap-up drafted straight away, so it's ready by the time Chris
+        looks; one ended by recovery at startup never does."""
         if not self.current:
             return None
         await self.set_listening(False)
@@ -252,10 +354,117 @@ class Sidecar:
             return None
         self.announce(m)
         self.broadcast(self.state())
+        if m.lines() >= wrapup.MIN_LINES and not m.wrapup():
+            self.draft(m)
         return m
 
+    async def resume_meeting(self, m):
+        """Carries on with an ended meeting, for one ended by mistake."""
+        if self.current is m:
+            await self.set_listening(True)
+            return m
+        await self.end_meeting()
+        m.meta["state"] = "paused"
+        m.meta["ended"] = None
+        self.current = m
+        self.ask_blocks, self.ask_sent = [], 0
+        await self.set_listening(True)
+        return m
+
+    def delete_meeting(self, m):
+        """Moves a meeting to the trash folder. The one that's on can't go."""
+        if m is self.current or m.id in self.sending:
+            return False
+        task = self.drafting.pop(m.id, None)
+        if task:
+            task.cancel()
+        m.close()
+        if m.folder.exists():
+            TRASH.mkdir(parents=True, exist_ok=True)
+            dest = TRASH / m.id
+            n = 2
+            while dest.exists():
+                dest = TRASH / f"{m.id}-{n}"
+                n += 1
+            m.folder.rename(dest)
+        del self.meetings[m.id]
+        self.broadcast({"type": "meeting_removed", "id": m.id})
+        return True
+
+    # ---- the wrap-up ----
+
+    def announce_wrapup(self, m):
+        self.broadcast({"type": "wrapup", "id": m.id, "wrapup": m.wrapup()})
+        self.announce(m)
+
+    def draft(self, m, replace=False):
+        """Starts drafting the wrap-up in the background. Edits survive a
+        redraft unless replace says to drop them."""
+        if m.id in self.drafting:
+            return
+        w = dict(m.wrapup() or {"draft": None, "edited": None})
+        w.update(state="drafting", error=None, started=time.time())
+        if replace:
+            w["edited"] = None
+        m.save_wrapup(w)
+        self.announce_wrapup(m)
+        self.drafting[m.id] = asyncio.create_task(self._draft(m))
+
+    async def _draft(self, m):
+        try:
+            try:
+                options = await self.notion.options()
+            except NotionError:
+                options = {}  # drafts fine without Notion; just no names or tags
+            notes = await wrapup.draft(ME, m.meta, m.segments, options)
+            w = m.wrapup()
+            w.update(state="ready", error=None, draft=notes, drafted=time.time(), lines=m.lines(),
+                     model=wrapup.MODEL)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # anything at all lands on screen, not in a log
+            w = m.wrapup()
+            w.update(state="failed" if not w.get("draft") else "ready", error=str(e) or type(e).__name__)
+        finally:
+            self.drafting.pop(m.id, None)
+        if m.id in self.meetings:
+            m.save_wrapup(w)
+            self.announce_wrapup(m)
+
+    def edit_wrapup(self, m, edited):
+        w = dict(m.wrapup() or {"state": "ready", "draft": None})
+        w["edited"] = {**wrapup.EMPTY, **edited} if edited else None
+        if w["state"] == "failed" and edited:
+            w["state"] = "ready"
+        m.save_wrapup(w)
+        self.announce_wrapup(m)
+
+    def send(self, m, target=None):
+        """Starts filing the meeting in Notion in the background."""
+        if m.id in self.sending or not m.notes():
+            return False
+        def save(progress):
+            m.meta["notion"] = progress
+            m.save()
+            self.announce(m)
+        self.sending[m.id] = asyncio.create_task(self._send(m, target, save))
+        progress = dict(m.meta.get("notion") or {})
+        progress.update(state="sending", error=None)
+        save(progress)
+        return True
+
+    async def _send(self, m, target, save):
+        try:
+            await self.notion.send(m.meta, m.notes(), m.segments, target, save)
+        except Exception as e:
+            progress = dict(m.meta.get("notion") or {})
+            progress.update(state="failed", error=str(e) or type(e).__name__)
+            save(progress)
+        finally:
+            self.sending.pop(m.id, None)
+
     def update_meeting(self, m, changes):
-        for key in ("title", "people", "notion"):
+        for key in ("title", "people", "skipped"):
             if key in changes:
                 m.meta[key] = changes[key]
         m.save()
@@ -403,6 +612,7 @@ class Channel:
         self.level = 0.0
         self.alive = False
         self.speaking = False
+        self.pid = None
 
     def status(self):
         return {"label": self.label, "speaker": self.speaker, "level": round(self.level, 3),
@@ -415,6 +625,7 @@ class Channel:
                 "parec", "-d", self.device, "--format=s16le", f"--rate={RATE}", "--channels=1",
                 "--raw", "--latency-msec=100",
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            self.pid = proc.pid  # so the call watch knows this recorder is ours
             vad, window = make_vad()
             buf = np.zeros(0, dtype=np.float32)
             speech = []
@@ -568,6 +779,70 @@ async def end(request):
     return web.json_response(m.summary() if m else None)
 
 
+async def resume(request):
+    m = await request.app["sidecar"].resume_meeting(find(request))
+    return web.json_response(m.summary())
+
+
+async def delete(request):
+    if not request.app["sidecar"].delete_meeting(find(request)):
+        raise web.HTTPConflict(text="End the meeting before deleting it.")
+    return web.json_response({"ok": True})
+
+
+async def get_wrapup(request):
+    m = find(request)
+    return web.json_response({"meeting": m.summary(), "wrapup": m.wrapup()})
+
+
+async def draft(request):
+    m = find(request)
+    request.app["sidecar"].draft(m, bool((await body(request)).get("replace")))
+    return web.json_response({"wrapup": m.wrapup()})
+
+
+async def edit_wrapup(request):
+    m = find(request)
+    request.app["sidecar"].edit_wrapup(m, (await body(request)).get("edited"))
+    return web.json_response({"wrapup": m.wrapup()})
+
+
+async def markdown(request):
+    m = find(request)
+    notes = m.notes()
+    if not notes:
+        raise web.HTTPNotFound(text="No wrap-up yet.")
+    return web.Response(text=wrapup.markdown(m.meta, notes), content_type="text/markdown")
+
+
+async def candidates(request):
+    app = request.app["sidecar"]
+    try:
+        return web.json_response({"pages": await app.notion.candidates(find(request).meta)})
+    except NotionError as e:
+        return web.json_response({"error": str(e)}, status=502)
+
+
+async def send(request):
+    app = request.app["sidecar"]
+    m = find(request)
+    if (m.meta.get("notion") or {}).get("state") == "sent":
+        raise web.HTTPConflict(text="Already in Notion.")
+    if not app.send(m, (await body(request)).get("target")):
+        raise web.HTTPConflict(text="Nothing to send yet, or it's already sending.")
+    return web.json_response(m.summary())
+
+
+async def get_settings(request):
+    return web.json_response(request.app["sidecar"].settings)
+
+
+async def set_settings(request):
+    app = request.app["sidecar"]
+    app.set_settings(await body(request))
+    return web.json_response(app.settings)
+
+
 async def ask(request):
     app = request.app["sidecar"]
     question = (await request.json()).get("q", "").strip()
@@ -599,14 +874,27 @@ async def main():
     app.router.add_patch("/meeting/{id}", update)
     app.router.add_post("/meeting/start", start)
     app.router.add_post("/meeting/end", end)
+    app.router.add_post("/meeting/{id}/resume", resume)
+    app.router.add_delete("/meeting/{id}", delete)
+    app.router.add_get("/meeting/{id}/wrapup", get_wrapup)
+    app.router.add_post("/meeting/{id}/wrapup", draft)
+    app.router.add_put("/meeting/{id}/wrapup", edit_wrapup)
+    app.router.add_get("/meeting/{id}/markdown", markdown)
+    app.router.add_get("/meeting/{id}/notion", candidates)
+    app.router.add_post("/meeting/{id}/notion", send)
     app.router.add_post("/ask", ask)
+    app.router.add_get("/settings", get_settings)
+    app.router.add_patch("/settings", set_settings)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "127.0.0.1", PORT).start()
     print(f"Aloi Sidecar engine on http://127.0.0.1:{PORT}", flush=True)
     if listen_now:
         await sidecar.set_listening(True)
-    await asyncio.gather(sidecar.flush_pending(), sidecar.levels())
+    jobs = [sidecar.flush_pending(), sidecar.levels()]
+    if calls.enabled():
+        jobs.append(sidecar.watch.watch())
+    await asyncio.gather(*jobs)
 
 
 if __name__ == "__main__":

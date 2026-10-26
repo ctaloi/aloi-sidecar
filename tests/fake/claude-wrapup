@@ -1,0 +1,23 @@
+#!/bin/sh
+# A stand-in for `claude -p --output-format json --json-schema …`: reads the
+# transcript and answers with a fixed wrap-up. FAKE_WRAPUP_FAIL=1 fails.
+cat > /dev/null
+sleep "${FAKE_WRAPUP_DELAY:-0.3}"
+if [ -n "${FAKE_WRAPUP_FAIL:-}" ]; then
+  printf '%s\n' '{"type":"result","is_error":true,"result":"Claude is overloaded right now."}'
+  exit 0
+fi
+cat <<'JSON'
+{"type":"result","subtype":"success","is_error":false,"result":"","structured_output":{
+ "title":"Northwind Dental Office Cutover",
+ "tldr":"Northwind moves to the new office on the 14th; the main number moves the night of the 13th, and Chris owes them pricing and a caller ID check.",
+ "summary":"Northwind confirmed the move date of the 14th. The circuit is live, but the main number still rings the old site.\n\nThe front desk reports outbound calls showing as Spam Likely on mobiles. Chris will have the team check the caller ID registration.",
+ "topics":[{"title":"Cutover timing","points":["Move date is the 14th","Number change scheduled for the night of the 13th"]},
+           {"title":"Spam labels","points":["Some outbound calls show Spam Likely on mobiles","Caller ID registration to be checked"]}],
+ "mine":[{"text":"Send pricing for two more conference phones","due":"today","at":7},
+         {"text":"Have the team check caller ID registration on Northwind's outbound numbers","due":"","at":5}],
+ "theirs":[{"who":"Front desk","text":"Send examples of calls flagged as spam","due":"this week","at":3}],
+ "decisions":[{"text":"The main number moves the night of the 13th","due":"","at":4}],
+ "questions":[{"text":"Does the auto attendant need to change for holiday hours?","due":"","at":8}],
+ "met_with":["Belmont","Not A Real Option"],"tags":["Migration","Made Up Tag"],"format":"Video"}}
+JSON
