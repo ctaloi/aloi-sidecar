@@ -118,6 +118,8 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     text: root.label !== "" ? "󰃭  " + root.label : "󰃭"
+    active: root.urgent
+    activeColor: Commons.Color.accent
     dimmed: root.phase === "signedOut" || root.phase === "consent" || root.phase === "keyring"
     tooltipText: root.tooltip
     onPressed: function(mouseButton) {
