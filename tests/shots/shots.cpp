@@ -13,6 +13,7 @@
 #include "../../src/agent.h"
 #include "../../src/app.h"
 #include "../../src/engine.h"
+#include "../../src/instance.h"
 #include "../../src/theme.h"
 
 static int warnings = 0;
@@ -42,17 +43,32 @@ int main(int argc, char *argv[]) {
     }
     qInstallMessageHandler(handler);
 
+    // --approval: the real hook and bus, so a command the agent wants to run
+    // comes back to this window as a card (needs the real claude, and
+    // build/aloi-sidecar for the hook).
+    const bool approval = args.contains("--approval");
     QTemporaryDir state, themeDir;
     App::prepare();
     // An empty theme folder: the default accent, whatever the desktop's theme is.
     Theme theme(themeDir.path());
     Engine engine(qEnvironmentVariable("SIDECAR_ENGINE", "http://127.0.0.1:8779"));
     Agent agent(engine.transcript(), qEnvironmentVariable("SIDECAR_CLAUDE"), state.path());
-    agent.setApprover("/bin/false");
+    agent.setApprover(approval ? QDir::currentPath() + "/build/aloi-sidecar" : "/bin/false");
     QObject::connect(&engine, &Engine::meetingChanged, &agent, [&] { agent.setMeeting(engine.meeting()); });
+    Instance instance;
+    if (approval) {
+        if (!instance.claim({})) {
+            std::fprintf(stderr, "Another Sidecar has the bus name; close it first.\n");
+            return 1;
+        }
+        instance.setApprover([&agent](const QString &session, const QString &command, const QString &description,
+                                      std::function<void(const QString &)> answer) {
+            agent.requestApproval(session, command, description, std::move(answer));
+        });
+    }
 
     QQmlApplicationEngine qml;
-    if (!App::load(qml, theme, engine, agent, nullptr))
+    if (!App::load(qml, theme, engine, agent, approval ? &instance : nullptr))
         return 1;
     auto *window = qobject_cast<QQuickWindow *>(qml.rootObjects().first());
     const QStringList wh = size.split('x');
@@ -69,6 +85,25 @@ int main(int argc, char *argv[]) {
     QDir().mkpath(out);
     window->grabWindow().save(out + "/listening-" + size + ".png");
 
+    if (approval) {
+        agent.ask("Run exactly `curl -sI https://example.com` and tell me the HTTP status line, nothing else.");
+        for (int i = 0; i < 600 && agent.approvals().isEmpty() && agent.running(); ++i)
+            wait(100);
+        if (agent.approvals().isEmpty()) {
+            std::fprintf(stderr, "No approval was asked for.\n");
+            return 1;
+        }
+        wait(300);
+        window->grabWindow().save(out + "/approval-" + size + ".png");
+        std::printf("asked to run: %s\n", qPrintable(agent.approvals().first().toMap().value("command").toString()));
+        agent.decide(agent.approvals().first().toMap().value("id").toString(), "once");
+        for (int i = 0; i < 600 && agent.running(); ++i)
+            wait(100);
+        wait(300);
+        window->grabWindow().save(out + "/approved-" + size + ".png");
+        std::printf("answer: %s\n", qPrintable(agent.messages().last().toMap().value("text").toString()));
+        return 0;
+    }
     agent.ask("Has anyone asked me something I haven't answered?");
     for (int i = 0; i < 100 && agent.running(); ++i)
         wait(100);

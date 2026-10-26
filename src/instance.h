@@ -33,12 +33,15 @@ public slots:
     // Come forward; action "ask" also puts the cursor in the ask box,
     // "toggle" turns listening on or off.
     Q_SCRIPTABLE void Open(const QString &action);
+    // Ask the agent about the call, from outside the window.
+    Q_SCRIPTABLE void Ask(const QString &question);
     // The agent's hook asking whether a command may run; the reply waits for
     // Chris ("allow", or "deny:" and why).
     Q_SCRIPTABLE QString Approve(const QString &session, const QString &command, const QString &description);
 
 signals:
     void openRequested(const QString &action);
+    void askRequested(const QString &question);
 
 private:
     Approver m_approver;

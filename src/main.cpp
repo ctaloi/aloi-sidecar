@@ -61,6 +61,8 @@ int main(int argc, char *argv[]) {
         agent.requestApproval(session, command, description, std::move(answer));
     });
 
+    QObject::connect(&instance, &Instance::askRequested, &agent, &Agent::ask);
+
     QQmlApplicationEngine qml;
     if (!App::load(qml, theme, engine, agent, &instance))
         return 1;

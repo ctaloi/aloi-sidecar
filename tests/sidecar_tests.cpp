@@ -81,6 +81,7 @@ private slots:
         QVERIFY(!args.at(args.indexOf("--tools") + 1).contains("Edit"));
         QVERIFY(!args.at(args.indexOf("--tools") + 1).contains("Write"));
         QCOMPARE(args.at(args.indexOf("--session-id") + 1), QString("abc"));
+        QVERIFY(!args.contains("WebFetch"));  // in --tools, but never auto-allowed
     }
 
     void readOnlyCommands() {

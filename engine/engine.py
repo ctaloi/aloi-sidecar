@@ -97,6 +97,7 @@ class Sidecar:
         self.tasks = []
         self.listening = False
         self.log = None
+        self.path = None
         MEETINGS.mkdir(parents=True, exist_ok=True)
         self.ask_blocks = []  # frozen transcript blocks already sent to Claude
         self.ask_sent = 0  # number of segments covered by ask_blocks
@@ -114,24 +115,29 @@ class Sidecar:
         path = None
         if not force_new and logs and time.time() - logs[-1].stat().st_mtime < RESUME_WINDOW:
             path = logs[-1]
-        if self.log and path and Path(self.log.name) == path:
+        if path and path == self.path:
             return
+        if not path and self.path and not self.path.exists() and not force_new:
+            return  # a new meeting nobody has spoken in yet: keep it
         if self.log:
             self.log.close()
+            self.log = None
         self.ask_blocks, self.ask_sent, self.pending_me = [], 0, []
         if path:
             with path.open() as f:
                 self.segments = [json.loads(line) for line in f if line.strip()]
         else:
+            # The file is made with the first line, so starting the service
+            # (at every login) doesn't leave empty meetings behind.
             path = MEETINGS / f"{datetime.now():%Y-%m-%d_%H%M%S}.jsonl"
             self.segments = []
-        self.log = path.open("a")
+        self.path = path
         self.broadcast({"type": "meeting", **self.meeting_info()})
         for s in self.segments:
             self.broadcast(self.segment_event(s))
 
     def meeting_info(self):
-        return {"meeting": Path(self.log.name).stem, "path": self.log.name, "lines": len(self.segments)}
+        return {"meeting": self.path.stem, "path": str(self.path), "lines": len(self.segments)}
 
     def state(self):
         return {"type": "state", "listening": self.listening,
@@ -202,6 +208,8 @@ class Sidecar:
         seg = {k: v for k, v in seg.items() if k != "hold_until"}
         seg["id"] = len(self.segments)
         self.segments.append(seg)
+        if not self.log:
+            self.log = self.path.open("a")
         self.log.write(json.dumps(seg) + "\n")
         self.log.flush()
         self.broadcast(self.segment_event(seg))

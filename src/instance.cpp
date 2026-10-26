@@ -25,6 +25,10 @@ bool Instance::claim(const QString &action) {
     return false;
 }
 
+void Instance::Ask(const QString &question) {
+    emit askRequested(question);
+}
+
 void Instance::Open(const QString &action) {
     emit openRequested(action);
     // Wayland won't let a window raise itself; Omarchy's helper asks Hyprland.
@@ -78,11 +82,14 @@ int Instance::approve() {
     if (!in.open(stdin, QIODevice::ReadOnly))
         return 0;
     const QJsonObject hook = QJsonDocument::fromJson(in.readAll()).object();
-    if (hook.value("tool_name").toString() != "Bash")
+    const QString tool = hook.value("tool_name").toString();
+    if (tool != "Bash" && tool != "WebFetch")
         return 0;
     const QJsonObject input = hook.value("tool_input").toObject();
-    const QString command = input.value("command").toString();
-    if (readOnly(command)) {
+    // A fetch is shown as the address it would open.
+    const QString command = tool == "WebFetch" ? "WebFetch " + input.value("url").toString()
+                                               : input.value("command").toString();
+    if (tool == "Bash" && readOnly(command)) {
         answerHook("allow", "A read-only lookup.");
         return 0;
     }
