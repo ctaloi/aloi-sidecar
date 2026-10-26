@@ -31,13 +31,38 @@ PAST = [
                                          ("Chris", "It did, Friday. I'll forward it again.")]),
 ]
 current_id = "2026-10-26_093000"
-state = {"listening": True}
+state = {"listening": True, "call": None, "settings": {"watch_calls": True}}
 clients = set()
+
+# What the past meetings came to: the first has a draft to check, the
+# second is in Notion, the third is being drafted.
+WRAPUP = {
+    "title": "Weekly Operations",
+    "tldr": "Porting is down to six; two are stuck with the losing carrier. Chris is chasing the Lumen port himself, and the softphone build goes to beta Thursday.",
+    "summary": "The porting queue is down to six. Two are waiting on the losing carrier, one of them Lumen, which Chris will chase this afternoon.\n\nThe new softphone build is on track for beta on Thursday.",
+    "topics": [{"title": "Porting queue", "points": ["Six ports left", "Two waiting on the losing carrier"]},
+               {"title": "Softphone beta", "points": ["Build goes to beta Thursday"]}],
+    "mine": [{"text": "Chase the stuck Lumen port with the carrier", "due": "this afternoon", "at": 1},
+             {"text": "Send the beta testers the softphone build notes", "due": "Thursday", "at": 2, "done": True}],
+    "theirs": [{"who": "Dana", "text": "Escalate the second stuck port with the losing carrier", "due": "tomorrow", "at": 0}],
+    "decisions": [{"text": "The softphone build goes to beta on Thursday", "due": "", "at": 2}],
+    "questions": [{"text": "Do the stuck ports need a new LOA?", "due": "", "at": 0}],
+    "met_with": ["Internal"], "tags": ["Operations", "VoIP"], "format": "Video"}
+wrapups = {
+    "past-0": {"state": "ready", "error": None, "draft": WRAPUP, "edited": None, "drafted": NOW - 3 * 3600 + 40 * 60},
+    "past-1": {"state": "ready", "error": None, "draft": {**WRAPUP, "title": "Harbor Logistics Porting Review"}, "edited": None,
+               "drafted": NOW - 25 * 3600},
+    "past-2": {"state": "drafting", "error": None, "draft": None, "edited": None, "started": NOW - 42},
+}
+notion = {"past-1": {"id": "abc", "url": "https://www.notion.so/abc", "state": "sent", "sent": NOW - 24 * 3600}}
+skipped = set()
 
 
 def meta(mid, title, started, ended, st, lines, event=None):
+    w = wrapups.get(mid)
     return {"id": mid, "title": title, "started": started, "ended": ended, "state": st, "event": event,
-            "people": [], "notion": None, "lines": lines}
+            "people": [], "notion": notion.get(mid), "lines": lines, "skipped": mid in skipped,
+            "wrapup": w["state"] if w else None, "edited": bool(w and w.get("edited"))}
 
 
 def segs(lines, t0, gap=40):
@@ -65,7 +90,14 @@ def channels():
 
 
 def state_event():
-    return {"type": "state", "listening": state["listening"], "current": current_id, "channels": []}
+    return {"type": "state", "listening": state["listening"], "current": current_id, "channels": [],
+            "call": state["call"], "settings": state["settings"]}
+
+
+def announce():
+    for q in clients:
+        q.put_nowait({"type": "meetings", "meetings": meetings()})
+        q.put_nowait(state_event())
 
 
 async def events(request):
@@ -116,11 +148,58 @@ async def ok(request):
     return web.json_response({})
 
 
+async def get_wrapup(request):
+    mid = request.match_info["id"]
+    return web.json_response({"wrapup": wrapups.get(mid)})
+
+
+async def put_wrapup(request):
+    mid = request.match_info["id"]
+    body = await request.json()
+    if mid in wrapups:
+        wrapups[mid]["edited"] = body.get("edited")
+    announce()
+    return web.json_response({"wrapup": wrapups.get(mid)})
+
+
+async def candidates(request):
+    return web.json_response({"pages": [
+        {"id": "p1", "title": "Weekly ops sync", "url": "", "created": "2026-10-26T14:05:00.000Z",
+         "summary": "Ports, softphone beta and the stuck Lumen order."}]})
+
+
+async def update(request):
+    mid = request.match_info["id"]
+    body = await request.json()
+    if "skipped" in body:
+        (skipped.add if body["skipped"] else skipped.discard)(mid)
+    announce()
+    return web.json_response({})
+
+
+async def set_call(request):
+    """For screenshots: pretend an app has the mic."""
+    body = await request.json()
+    state["call"] = body.get("call")
+    state["listening"] = body.get("listening", state["listening"])
+    announce()
+    return web.json_response(state)
+
+
 app = web.Application()
 app.router.add_get("/events", events)
 app.router.add_get("/meeting/{id}", meeting)
 app.router.add_post("/listen", listen)
 app.router.add_post("/meeting/start", ok)
 app.router.add_post("/meeting/end", ok)
-app.router.add_patch("/meeting/{id}", ok)
+app.router.add_patch("/meeting/{id}", update)
+app.router.add_get("/meeting/{id}/wrapup", get_wrapup)
+app.router.add_put("/meeting/{id}/wrapup", put_wrapup)
+app.router.add_post("/meeting/{id}/wrapup", ok)
+app.router.add_get("/meeting/{id}/notion", candidates)
+app.router.add_post("/meeting/{id}/notion", ok)
+app.router.add_post("/meeting/{id}/resume", ok)
+app.router.add_delete("/meeting/{id}", ok)
+app.router.add_patch("/settings", ok)
+app.router.add_post("/_call", set_call)
 web.run_app(app, host="127.0.0.1", port=PORT, print=None)

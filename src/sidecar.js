@@ -54,3 +54,34 @@ function group(m, now) {
 function dayLabel(m) {
     return new Date(m.started * 1000).toLocaleDateString(Qt.locale(), "ddd d MMM")
 }
+
+// Where a meeting is in its life after the call, for chips and the list.
+function stage(m) {
+    if (!m || !m.id) return ""
+    if (m.state !== "ended") return "on"
+    const n = m.notion || {}
+    if (n.state === "sent") return "sent"
+    if (n.state === "sending") return "sending"
+    if (n.state === "failed") return "sendFailed"
+    if (m.skipped) return "skipped"
+    if (m.wrapup === "drafting") return "drafting"
+    if (m.wrapup === "failed") return "draftFailed"
+    if (m.wrapup === "ready") return "ready"
+    return "none"
+}
+
+// Still to wrap up: over, talked in, not filed or set aside, and recent
+// enough that it's still on Chris's mind (older ones sit under their day).
+function needsWrapup(m, now) {
+    const s = stage(m)
+    if (s === "on" || s === "sent" || s === "skipped" || !(m.lines > 0)) return false
+    return now / 1000 - m.started < 7 * 86400
+}
+
+// "6:02 PM" today, "Mon 6:02 PM" this week, else the date.
+function when(t, now) {
+    const d = new Date(t * 1000)
+    if (startOfDay(d) === startOfDay(new Date(now))) return clock(t)
+    if (now - d.getTime() < 6 * 86400000) return d.toLocaleDateString(Qt.locale(), "ddd") + " " + clock(t)
+    return d.toLocaleDateString(Qt.locale(), "d MMM")
+}

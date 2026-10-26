@@ -2,11 +2,12 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
+import "sidecar.js" as Sidecar
 
 // One bar that says whether Sidecar is listening; every meeting on the
-// left; the meeting on screen in the middle, as it's said or as it was;
-// and the agent on the right, asked about that meeting and no other.
-// Space listens, / asks, ? shows the keys.
+// left; the meeting on screen in the middle, as it's said or what it came
+// to; and the agent on the right, asked about that meeting and no other.
+// Space listens, / asks, ? shows the keys, right-click does the rest.
 ApplicationWindow {
     id: win
     width: 1440
@@ -34,15 +35,111 @@ ApplicationWindow {
 
     readonly property bool typing: activeFocusItem !== null
         && (activeFocusItem instanceof TextInput || (activeFocusItem instanceof TextEdit && !activeFocusItem.readOnly))
-    readonly property bool overlayOpen: keys.visible || newMeetingDialog.visible || quitDialog.visible || meetingPane.dialogOpen
+    readonly property bool overlayOpen: keys.visible || confirm.visible || sendSheet.visible
     readonly property bool idle: !typing && !overlayOpen
+    readonly property var shown: engine.selectedMeeting
+    readonly property string stage: Sidecar.stage(shown)
     // The list folds away by hand (\), or by itself when there isn't room for three columns.
     property bool listHidden: false
     readonly property bool listShown: !listHidden && width >= 1100
 
     function newMeeting() {
-        if (engine.current !== "") newMeetingDialog.open()
-        else engine.startMeeting()
+        if (engine.current === "") { engine.startMeeting(); return }
+        confirm.ask({
+            title: qsTr("End “%1” and start a new meeting?").arg(engine.meetingById(engine.current).title || ""),
+            detail: qsTr("The current meeting ends and its wrap-up is drafted; the new one starts listening."),
+            confirm: qsTr("Start a new one"),
+            run: () => engine.startMeeting()
+        })
+    }
+
+    // Everything that can be done with a meeting, from its menu, its
+    // buttons or the keys, in one place.
+    function act(what, m) {
+        if (!m || !m.id) return
+        const id = m.id
+        switch (what) {
+        case "listen":
+            if (id === engine.current) engine.toggleListening()
+            else engine.resume(id)
+            break
+        case "end":
+            engine.select(id)
+            confirm.ask({
+                title: qsTr("End “%1”?").arg(m.title),
+                detail: qsTr("Listening stops and Opus drafts the wrap-up. Space after this starts a new meeting."),
+                confirm: qsTr("End meeting"),
+                run: () => engine.endMeeting()
+            })
+            break
+        case "rename":
+            engine.select(id)
+            Qt.callLater(meetingPane.rename)
+            break
+        case "draft":
+            if (m.wrapup === "drafting" || !(m.lines > 0)) return
+            if (m.edited || m.wrapup === "ready")
+                confirm.ask({
+                    title: qsTr("Draft the wrap-up again?"),
+                    detail: m.edited ? qsTr("Opus reads the meeting afresh. The edits you made to this wrap-up are replaced.")
+                                     : qsTr("Opus reads the meeting afresh and the current draft is replaced."),
+                    confirm: qsTr("Draft again"),
+                    danger: !!m.edited,
+                    run: () => engine.draftWrapup(id, true)
+                })
+            else
+                engine.draftWrapup(id, false)
+            engine.select(id)
+            break
+        case "send": {
+            const s = Sidecar.stage(m)
+            if (s === "sent" || s === "sending" || s === "on") return
+            if (s === "sendFailed") { engine.sendToNotion(id); return }  // carries on with the same page
+            if (!m.wrapup || m.wrapup !== "ready") {
+                engine.select(id)
+                toast.show(qsTr("Draft the wrap-up first (D)"))
+                return
+            }
+            const notes = id === engine.selected && engine.wrapup ? (engine.wrapup.edited || engine.wrapup.draft || {}) : {}
+            sendSheet.open(m, notes.title || m.title)
+            break
+        }
+        case "revert":
+            confirm.ask({
+                title: qsTr("Go back to Opus's draft?"),
+                detail: qsTr("The edits you made to this wrap-up are dropped."),
+                confirm: qsTr("Use the draft"),
+                danger: true,
+                run: () => { if (id === engine.selected) meetingPane.revertNotes(); else engine.saveWrapup(id, {}) }
+            })
+            break
+        case "notion":
+            if (m.notion && m.notion.url) Qt.openUrlExternally(m.notion.url)
+            break
+        case "copyNotes":
+            engine.copyWrapup(id)
+            break
+        case "copyTranscript":
+            engine.copyTranscript(id)
+            break
+        case "skip":
+            engine.setSkipped(id, !m.skipped)
+            toast.show(m.skipped ? qsTr("Back in Needs wrap-up") : qsTr("Marked as needing no wrap-up"))
+            break
+        case "files":
+            Qt.openUrlExternally("file://" + engine.meetingFolder(id))
+            break
+        case "delete":
+            if (id === engine.current) return
+            confirm.ask({
+                title: qsTr("Delete “%1”?").arg(m.title),
+                detail: qsTr("Its transcript and wrap-up move to Sidecar's trash folder (~/.local/share/aloi-sidecar/trash). Anything already in Notion stays there."),
+                confirm: qsTr("Delete"),
+                danger: true,
+                run: () => engine.remove(id)
+            })
+            break
+        }
     }
 
     Connections {
@@ -53,6 +150,10 @@ ApplicationWindow {
             if (action === "ask") agentPane.input.forceActiveFocus()
             else if (action === "toggle") engine.toggleListening()
         }
+    }
+    Connections {
+        target: engine
+        function onCopied(what) { toast.show(what) }
     }
 
     header: TopBar {
@@ -74,6 +175,7 @@ ApplicationWindow {
         }
         MeetingPane {
             id: meetingPane
+            objectName: "meetingPane"
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumWidth: 300
@@ -87,57 +189,50 @@ ApplicationWindow {
         }
     }
 
-    KeysOverlay { id: keys }
-
-    Dialog {
-        id: newMeetingDialog
-        anchors.centerIn: Overlay.overlay
-        modal: true
-        title: qsTr("End “%1” and start a new meeting?").arg(engine.meetingById(engine.current).title || "")
-        width: Math.min(460, win.width - 40)
-        Material.roundedScale: theme.radius
-        Label {
-            width: newMeetingDialog.availableWidth
-            wrapMode: Text.Wrap
-            text: qsTr("The current meeting is kept as it is, and the new one starts listening.")
-        }
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: engine.startMeeting()
-    }
-
-    Dialog {
-        id: quitDialog
-        anchors.centerIn: Overlay.overlay
-        modal: true
-        title: qsTr("Stop listening and quit?")
-        width: Math.min(460, win.width - 40)
-        Material.roundedScale: theme.radius
-        Label {
-            width: quitDialog.availableWidth
-            wrapMode: Text.Wrap
-            text: qsTr("The meeting is paused, not ended: open Sidecar again and Space carries on with it.")
-        }
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: Qt.quit()
-    }
+    KeysOverlay { id: keys; objectName: "keys" }
+    Toast { id: toast }
+    SendSheet { id: sendSheet; objectName: "sendSheet"; anchors.fill: parent; z: 40 }
+    ConfirmOverlay { id: confirm; anchors.fill: parent; z: 45 }
 
     Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.connected; onActivated: engine.toggleListening() }
     Shortcut { sequence: "/"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: agentPane.input.forceActiveFocus() }
     Shortcut { sequence: "Ctrl+F"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: { win.listHidden = false; topBar.search.forceActiveFocus() } }
     Shortcut { sequence: "?"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: keys.open() }
-    Shortcut { sequence: "End"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.transcriptPane.toLive() }
+    Shortcut { sequence: "End"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { meetingPane.tab = "transcript"; meetingPane.transcriptPane.toLive() } }
     Shortcut { sequence: "J"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingList.step(1) }
     Shortcut { sequence: "K"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingList.step(-1) }
     Shortcut { sequence: "G"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: engine.select(engine.current) }
     Shortcut { sequence: "\\"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.listHidden = !win.listHidden }
     Shortcut { sequence: "R"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.rename() }
-    Shortcut { sequence: "E"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: { engine.select(engine.current); meetingPane.confirmEnd() } }
+    Shortcut { sequence: "E"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: win.act("end", engine.meetingById(engine.current)) }
+    Shortcut { sequence: "T"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.toggleTab() }
+    Shortcut { sequence: "D"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("draft", win.shown) }
+    Shortcut { sequence: "S"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.act("send", win.shown) }
+    Shortcut { sequence: "O"; context: Qt.ApplicationShortcut; enabled: win.idle && win.stage === "sent"; onActivated: win.act("notion", win.shown) }
+    Shortcut { sequence: "C"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("copyNotes", win.shown) }
+    Shortcut { sequence: "Shift+C"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.act("copyTranscript", win.shown) }
+    Shortcut { sequence: "X"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended" && win.stage !== "sent"; onActivated: win.act("skip", win.shown) }
+    Shortcut { sequence: "Del"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("delete", win.shown) }
+    Shortcut { sequences: ["Menu", "Shift+F10"]; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.openMenu() }
     Shortcut { sequence: "Ctrl+N"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: win.newMeeting() }
     Shortcut { sequence: "Ctrl+Shift+K"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen && !agent.running; onActivated: agent.forget() }
     Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.running; onActivated: agent.stop() }
     Shortcut { sequence: "Y"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.approvals.length > 0; onActivated: agent.decide(agent.approvals[0].id, "once") }
     Shortcut { sequence: "N"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.approvals.length > 0; onActivated: agent.decide(agent.approvals[0].id, "deny") }
-    Shortcut { sequence: "Q"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: engine.listening ? quitDialog.open() : Qt.quit() }
+    Shortcut {
+        sequence: "Q"
+        context: Qt.ApplicationShortcut
+        enabled: win.idle
+        onActivated: {
+            if (!engine.listening) { Qt.quit(); return }
+            confirm.ask({
+                title: qsTr("Stop listening and quit?"),
+                detail: qsTr("The meeting is paused, not ended: open Sidecar again and Space carries on with it."),
+                confirm: qsTr("Quit"),
+                run: () => Qt.quit()
+            })
+        }
+    }
     Repeater {
         model: 4
         delegate: Item {

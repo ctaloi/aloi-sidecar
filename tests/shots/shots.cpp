@@ -6,6 +6,9 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
+#include <QProcess>
+#include <QMouseEvent>
+#include <QKeyEvent>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <cstdio>
@@ -118,6 +121,47 @@ int main(int argc, char *argv[]) {
         wait(100);
     wait(500);
     window->grabWindow().save(out + "/review-" + size + ".png");
+
+    // The rest of a meeting's life: its transcript, its menu, sending it,
+    // one already in Notion, one being drafted, and a call noticed.
+    auto *pane = window->findChild<QObject *>("meetingPane");
+    auto shot = [&](const QString &name, int ms = 500) {
+        wait(ms);
+        window->grabWindow().save(out + "/" + name + "-" + size + ".png");
+    };
+    pane->setProperty("tab", "transcript");
+    shot("review-transcript");
+    pane->setProperty("tab", "notes");
+    wait(200);
+    // A right-click on the second meeting in the list (the list shows from 1100 wide).
+    if (window->width() >= 1100) {
+        const QPointF at(150, 52 + 6 + 40 + 58 + 40 + 29);
+        for (auto type : {QEvent::MouseButtonPress, QEvent::MouseButtonRelease}) {
+            QMouseEvent e(type, at, window->mapToGlobal(at), Qt::RightButton,
+                          type == QEvent::MouseButtonPress ? Qt::RightButton : Qt::NoButton, Qt::NoModifier);
+            QGuiApplication::sendEvent(window, &e);
+        }
+        shot("menu", 300);
+        QKeyEvent esc(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+        QGuiApplication::sendEvent(window, &esc);
+        wait(200);
+    }
+    QMetaObject::invokeMethod(window, "act", Q_ARG(QVariant, "send"), Q_ARG(QVariant, engine.selectedMeeting()));
+    shot("send", 700);
+    QKeyEvent esc(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QGuiApplication::sendEvent(window, &esc);
+    QMetaObject::invokeMethod(window->findChild<QObject *>("sendSheet"), "close");
+    engine.select("past-1");
+    shot("sent", 700);
+    engine.select("past-2");
+    shot("drafting", 700);
+    QProcess::execute("curl", {"-s", "-o", "/dev/null", "-X", "POST", "-H", "Content-Type: application/json",
+                               "-d", R"({"listening": false, "call": {"app": "Teams", "since": 1}})",
+                               qEnvironmentVariable("SIDECAR_ENGINE") + "/_call"});
+    engine.select(engine.current());
+    shot("call", 900);
+    QMetaObject::invokeMethod(window->findChild<QObject *>("keys"), "open");
+    shot("keys", 400);
 
     std::printf("%s: %d lines, %lld messages, %d warnings\n", qPrintable(size), engine.transcript()->count(),
                 static_cast<long long>(agent.messages().size()), warnings);

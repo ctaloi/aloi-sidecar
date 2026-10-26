@@ -9,6 +9,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
+#include <QStandardPaths>
 
 #include "tools.h"
 
@@ -67,6 +68,21 @@ QString Transcript::textAfter(int id) const {
     return rows.join('\n');
 }
 
+int Transcript::rowOf(int id) const {
+    // Lines are numbered in order from 0, so the row is usually the id.
+    if (id >= 0 && id < m_lines.size() && m_lines.at(id).id == id)
+        return id;
+    for (int i = 0; i < m_lines.size(); ++i)
+        if (m_lines.at(i).id == id)
+            return i;
+    return -1;
+}
+
+double Transcript::startOf(int id) const {
+    const int row = rowOf(id);
+    return row < 0 ? 0 : m_lines.at(row).start;
+}
+
 Engine::Engine(const QString &url, QObject *parent)
     : QObject(parent),
       m_url(!url.isEmpty() ? url : qEnvironmentVariable("SIDECAR_ENGINE", "http://127.0.0.1:8777")) {
@@ -76,7 +92,7 @@ Engine::Engine(const QString &url, QObject *parent)
 }
 
 Engine::~Engine() {
-    for (QNetworkReply *reply : {m_stream.data(), m_fetch.data()}) {
+    for (QNetworkReply *reply : {m_stream.data(), m_fetch.data(), m_wrapupFetch.data(), m_candidatesFetch.data()}) {
         if (reply) {
             reply->disconnect(this);
             reply->abort();
@@ -262,9 +278,13 @@ void Engine::handleEvent(const QJsonObject &event) {
         const bool newMeeting = current != m_current;
         if (newMeeting)
             m_live.clear();
-        if (on != m_listening || newMeeting) {
+        const QVariantMap call = event.value("call").toObject().toVariantMap();
+        const QVariantMap settings = event.value("settings").toObject().toVariantMap();
+        if (on != m_listening || newMeeting || call != m_call || settings != m_settings) {
             m_listening = on;
             m_current = current;
+            m_call = call;
+            m_settings = settings;
             emit stateChanged();
         }
         // A new meeting comes on screen, unless Chris is reading another one.
@@ -273,6 +293,11 @@ void Engine::handleEvent(const QJsonObject &event) {
             showLive();
         else if (m_selected.isEmpty() && !m_meetings.isEmpty())
             select(current.isEmpty() ? m_meetings.first().toMap().value("id").toString() : current);
+    } else if (type == "wrapup") {
+        if (event.value("id").toString() == m_selected) {
+            m_wrapup = event.value("wrapup").toObject().toVariantMap();
+            emit wrapupChanged();
+        }
     } else if (type == "echo_dropped") {
         ++m_echoes;
         emit echoesChanged();
@@ -285,6 +310,7 @@ void Engine::showLive() {
         emit selectedChanged();
         emit selectedMeetingChanged();
         emit interimsChanged();
+        fetchWrapup(m_current);
     }
     if (m_fetch) {
         m_fetch->disconnect(this);
@@ -308,13 +334,14 @@ void Engine::select(const QString &id) {
     emit selectedChanged();
     emit selectedMeetingChanged();
     emit interimsChanged();
+    fetchWrapup(id);
     m_transcript.clear();
     if (m_fetch) {
         m_fetch->disconnect(this);
         m_fetch->abort();
     }
     setLoading(true);
-    QNetworkRequest request(m_url.resolved(QUrl("/meeting/" + QString::fromUtf8(QUrl::toPercentEncoding(id)))));
+    QNetworkRequest request(m_url.resolved(QUrl(path(id))));
     m_fetch = m_network.get(request);
     connect(m_fetch, &QNetworkReply::finished, this, [this, reply = m_fetch.data()] {
         reply->deleteLater();
@@ -390,7 +417,135 @@ void Engine::endMeeting() {
 void Engine::rename(const QString &id, const QString &title) {
     if (title.trimmed().isEmpty())
         return;
-    post("/meeting/" + QString::fromUtf8(QUrl::toPercentEncoding(id)), QJsonObject{{"title", title.trimmed()}}, "PATCH");
+    post(path(id), QJsonObject{{"title", title.trimmed()}}, "PATCH");
+}
+
+QString Engine::path(const QString &id, const QString &rest) {
+    return "/meeting/" + QString::fromUtf8(QUrl::toPercentEncoding(id)) + rest;
+}
+
+void Engine::fetchWrapup(const QString &id) {
+    if (m_wrapupFetch) {
+        m_wrapupFetch->disconnect(this);
+        m_wrapupFetch->abort();
+    }
+    if (!m_wrapup.isEmpty()) {
+        m_wrapup.clear();
+        emit wrapupChanged();
+    }
+    if (id.isEmpty())
+        return;
+    m_wrapupFetch = m_network.get(QNetworkRequest(m_url.resolved(QUrl(path(id, "/wrapup")))));
+    connect(m_wrapupFetch, &QNetworkReply::finished, this, [this, id, reply = m_wrapupFetch.data()] {
+        reply->deleteLater();
+        if (reply != m_wrapupFetch)
+            return;
+        m_wrapupFetch = nullptr;
+        if (reply->error() != QNetworkReply::NoError || id != m_selected)
+            return;
+        m_wrapup = QJsonDocument::fromJson(reply->readAll()).object().value("wrapup").toObject().toVariantMap();
+        emit wrapupChanged();
+    });
+}
+
+void Engine::resume(const QString &id) {
+    m_chosen = false;
+    post(path(id, "/resume"), {});
+}
+
+void Engine::remove(const QString &id) {
+    post(path(id), {}, "DELETE");
+}
+
+void Engine::setSkipped(const QString &id, bool skipped) {
+    post(path(id), QJsonObject{{"skipped", skipped}}, "PATCH");
+}
+
+void Engine::draftWrapup(const QString &id, bool replace) {
+    post(path(id, "/wrapup"), QJsonObject{{"replace", replace}});
+}
+
+void Engine::saveWrapup(const QString &id, const QVariantMap &edited) {
+    post(path(id, "/wrapup"), QJsonObject{{"edited", edited.isEmpty() ? QJsonValue() : QJsonValue(QJsonObject::fromVariantMap(edited))}}, "PUT");
+}
+
+void Engine::findNotionPages(const QString &id) {
+    if (m_candidatesFetch) {
+        m_candidatesFetch->disconnect(this);
+        m_candidatesFetch->abort();
+    }
+    m_candidates.clear();
+    m_candidatesError.clear();
+    m_candidatesLoading = true;
+    emit candidatesChanged();
+    m_candidatesFetch = m_network.get(QNetworkRequest(m_url.resolved(QUrl(path(id, "/notion")))));
+    connect(m_candidatesFetch, &QNetworkReply::finished, this, [this, reply = m_candidatesFetch.data()] {
+        reply->deleteLater();
+        if (reply != m_candidatesFetch)
+            return;
+        m_candidatesFetch = nullptr;
+        m_candidatesLoading = false;
+        const QJsonObject body = QJsonDocument::fromJson(reply->readAll()).object();
+        if (body.contains("error"))
+            m_candidatesError = body.value("error").toString();
+        else if (reply->error() != QNetworkReply::NoError)
+            m_candidatesError = tr("The engine didn't answer: %1").arg(reply->errorString());
+        else
+            m_candidates = body.value("pages").toArray().toVariantList();
+        emit candidatesChanged();
+    });
+}
+
+void Engine::sendToNotion(const QString &id, const QString &target) {
+    QJsonObject body;
+    if (!target.isEmpty())
+        body.insert("target", target);
+    post(path(id, "/notion"), body);
+}
+
+void Engine::copyWrapup(const QString &id) {
+    QNetworkReply *reply = m_network.get(QNetworkRequest(m_url.resolved(QUrl(path(id, "/markdown")))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            setError(tr("There's no wrap-up to copy yet."));
+            return;
+        }
+        copyToClipboard(QString::fromUtf8(reply->readAll()));
+        emit copied(tr("Wrap-up copied as Markdown"));
+    });
+}
+
+void Engine::copyTranscript(const QString &id) {
+    if (id == m_selected && !m_loading) {
+        copyToClipboard(transcriptText());
+        emit copied(tr("Transcript copied"));
+        return;
+    }
+    QNetworkReply *reply = m_network.get(QNetworkRequest(m_url.resolved(QUrl(path(id)))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError)
+            return;
+        QStringList rows;
+        for (const auto &v : QJsonDocument::fromJson(reply->readAll()).object().value("segments").toArray()) {
+            const QJsonObject s = v.toObject();
+            rows << QString("[%1] %2: %3").arg(QDateTime::fromSecsSinceEpoch(qint64(s.value("start").toDouble())).toString("HH:mm:ss"),
+                                               s.value("speaker").toString(), s.value("text").toString());
+        }
+        copyToClipboard(rows.join('\n'));
+        emit copied(tr("Transcript copied"));
+    });
+}
+
+QString Engine::meetingFolder(const QString &id) const {
+    const QString root = qEnvironmentVariable("SIDECAR_MEETINGS",
+        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/aloi-sidecar/meetings");
+    return root + "/" + id;
+}
+
+void Engine::setSetting(const QString &key, const QVariant &value) {
+    post("/settings", QJsonObject{{key, QJsonValue::fromVariant(value)}}, "PATCH");
 }
 
 void Engine::copyToClipboard(const QString &text) const {

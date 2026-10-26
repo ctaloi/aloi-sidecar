@@ -309,8 +309,7 @@ class Sidecar:
         choice = await calls.notify(f"{app} is using your mic", "Listen to this call with Sidecar?",
                                     [("default", "Listen"), ("ignore", "Not now")])
         if choice == "default" and not self.listening:
-            await self.start_meeting(f"{app} call at {datetime.now():%-I:%M}"
-                                     if app in calls.CALL_APPS else None)
+            await self.start_meeting()
 
     async def ask_to_end(self, m, app):
         heard = m.lines()
@@ -326,6 +325,8 @@ class Sidecar:
         await self.end_meeting()
         if self.prompt:  # a "Listen?" notification is answered by starting
             self.notify(None)
+        if not title and not event and self.call and self.call["app"] in calls.CALL_APPS:
+            title = f"{self.call['app']} call at {datetime.now():%-I:%M}"
         m = Meeting.create(title or (event or {}).get("subject") or ad_hoc_title(), event)
         self.meetings[m.id] = m
         self.current = m

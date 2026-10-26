@@ -14,7 +14,7 @@ Rectangle {
     property double now: Date.now()
 
     readonly property var groups: [
-        ["now", qsTr("Now")], ["today", qsTr("Today")], ["yesterday", qsTr("Yesterday")],
+        ["now", qsTr("Now")], ["wrap", qsTr("Needs wrap-up")], ["today", qsTr("Today")], ["yesterday", qsTr("Yesterday")],
         ["week", qsTr("This week")], ["earlier", qsTr("Earlier")]
     ]
     // Headers and rows in one list, so each group can carry its count.
@@ -23,13 +23,15 @@ Rectangle {
         const shown = engine.meetings.filter(m => f === "" || (m.title || "").toLowerCase().indexOf(f) >= 0)
         const out = []
         for (const [key, label] of groups) {
-            const inGroup = shown.filter(m => Sidecar.group(m, now) === key)
+            const inGroup = shown.filter(m => place(m) === key)
             if (inGroup.length === 0) continue
             out.push({ header: true, label: label, count: inGroup.length })
             for (const m of inGroup) out.push({ header: false, m: m })
         }
         return out
     }
+    // Recent meetings still to wrap up get a group of their own, under Now.
+    function place(m) { return m.state !== "ended" ? "now" : Sidecar.needsWrapup(m, now) ? "wrap" : Sidecar.group(m, now) }
     // The meeting ids in screen order, for j / k.
     readonly property var order: rows.filter(r => !r.header).map(r => r.m.id)
     function step(delta) {
@@ -95,6 +97,10 @@ Rectangle {
                 }
                 HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: engine.select(row.m.id) }
+                TapHandler {
+                    acceptedButtons: Qt.RightButton
+                    onTapped: (point) => menu.show(row.m, row, point.position.x, point.position.y)
+                }
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -132,23 +138,29 @@ Rectangle {
                             Layout.fillWidth: true
                             text: {
                                 const g = Sidecar.group(row.m, pane.now)
-                                const day = g === "week" || g === "earlier" ? Sidecar.dayLabel(row.m) + "  ·  " : ""
+                                const day = g === "week" || g === "earlier" || (pane.place(row.m) === "wrap" && g !== "today")
+                                            ? Sidecar.dayLabel(row.m) + "  ·  " : ""
                                 return day + Sidecar.span(row.m) + "  ·  " + qsTr("%n lines", "", row.m.lines || 0)
                             }
                             color: ui.faint
                             font.pixelSize: 11
                             elide: Text.ElideRight
                         }
+                        // Where it is after the call, in a word.
                         Label {
-                            visible: !!row.m.notion
-                            text: qsTr("in Notion")
-                            color: ui.them
-                            font.pixelSize: 11
-                        }
-                        Label {
-                            visible: row.m.state === "paused"
-                            text: qsTr("paused")
-                            color: ui.muted
+                            readonly property string stage: Sidecar.stage(row.m)
+                            readonly property var look: ({
+                                drafting: [qsTr("drafting…"), theme.accent],
+                                ready: [qsTr("ready"), theme.accent],
+                                draftFailed: [qsTr("draft failed"), ui.danger],
+                                sending: [qsTr("sending…"), theme.accent],
+                                sendFailed: [qsTr("send failed"), ui.danger],
+                                sent: [qsTr("✓ Notion"), ui.them],
+                                skipped: [qsTr("no wrap-up"), ui.faint]
+                            })
+                            visible: row.m.state === "paused" || !!look[stage]
+                            text: row.m.state === "paused" ? qsTr("paused") : look[stage] ? look[stage][0] : ""
+                            color: row.m.state === "paused" ? ui.muted : look[stage] ? look[stage][1] : ui.faint
                             font.pixelSize: 11
                         }
                     }
@@ -156,6 +168,8 @@ Rectangle {
             }
         }
     }
+
+    MeetingMenu { id: menu }
 
     // Nothing yet, or nothing matching the search.
     Column {

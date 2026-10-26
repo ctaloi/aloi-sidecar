@@ -37,6 +37,9 @@ public:
     // The lines after id, one per row as "[time] speaker: text", for the agent.
     QString textAfter(int id) const;
     int lastId() const { return m_lines.isEmpty() ? -1 : m_lines.last().id; }
+    // When line id was said, and its row, for jumping to it.
+    Q_INVOKABLE double startOf(int id) const;
+    Q_INVOKABLE int rowOf(int id) const;
 
 signals:
     void countChanged();
@@ -74,6 +77,17 @@ class Engine : public QObject {
     Q_PROPERTY(QVariantList interims READ interims NOTIFY interimsChanged)
     Q_PROPERTY(int echoes READ echoes NOTIFY echoesChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
+    // The selected meeting's wrap-up: {state: drafting|ready|failed, error,
+    // draft, edited, drafted}, or empty if it has none yet.
+    Q_PROPERTY(QVariantMap wrapup READ wrapup NOTIFY wrapupChanged)
+    // Another app holding the mic, as the engine sees it: {app, since}, or empty.
+    Q_PROPERTY(QVariantMap call READ call NOTIFY stateChanged)
+    // The engine's settings: {watch_calls}.
+    Q_PROPERTY(QVariantMap settings READ settings NOTIFY stateChanged)
+    // Notion pages from the day of the meeting being sent, to fill one in instead.
+    Q_PROPERTY(QVariantList candidates READ candidates NOTIFY candidatesChanged)
+    Q_PROPERTY(bool candidatesLoading READ candidatesLoading NOTIFY candidatesChanged)
+    Q_PROPERTY(QString candidatesError READ candidatesError NOTIFY candidatesChanged)
 
 public:
     // url: the engine's address; empty uses SIDECAR_ENGINE or 127.0.0.1:8777.
@@ -92,6 +106,12 @@ public:
     QVariantList interims() const;
     int echoes() const { return m_echoes; }
     QString error() const { return m_error; }
+    QVariantMap wrapup() const { return m_wrapup; }
+    QVariantMap call() const { return m_call; }
+    QVariantMap settings() const { return m_settings; }
+    QVariantList candidates() const { return m_candidates; }
+    bool candidatesLoading() const { return m_candidatesLoading; }
+    QString candidatesError() const { return m_candidatesError; }
 
     Q_INVOKABLE QVariantMap meetingById(const QString &id) const;
     Q_INVOKABLE void connectToEngine();
@@ -107,6 +127,28 @@ public:
     // The selected meeting's transcript as plain text, for the clipboard.
     Q_INVOKABLE QString transcriptText() const { return m_transcript.textAfter(-1); }
     Q_INVOKABLE void copyToClipboard(const QString &text) const;
+
+    // A meeting by id, from its right-click menu or the keys.
+    // Carry on with an ended meeting (one ended by mistake).
+    Q_INVOKABLE void resume(const QString &id);
+    // Move a meeting to the trash folder.
+    Q_INVOKABLE void remove(const QString &id);
+    // Mark a meeting as needing no wrap-up (a test call), or undo that.
+    Q_INVOKABLE void setSkipped(const QString &id, bool skipped);
+    // Draft the wrap-up again; replace drops Chris's edits.
+    Q_INVOKABLE void draftWrapup(const QString &id, bool replace = false);
+    // Save Chris's version of the wrap-up; an empty map goes back to the draft.
+    Q_INVOKABLE void saveWrapup(const QString &id, const QVariantMap &edited);
+    // Look for pages from the meeting's day, then send: target empty for a
+    // new page, or a page id to fill in.
+    Q_INVOKABLE void findNotionPages(const QString &id);
+    Q_INVOKABLE void sendToNotion(const QString &id, const QString &target = {});
+    // The wrap-up, or the transcript, of any meeting onto the clipboard.
+    Q_INVOKABLE void copyWrapup(const QString &id);
+    Q_INVOKABLE void copyTranscript(const QString &id);
+    // Where a meeting's files are, for "Show files".
+    Q_INVOKABLE QString meetingFolder(const QString &id) const;
+    Q_INVOKABLE void setSetting(const QString &key, const QVariant &value);
     // When the window closes: stop listening and wait (briefly) for the
     // engine to say so, so nothing is heard with the app closed.
     void stopListeningNow();
@@ -129,6 +171,10 @@ signals:
     void interimsChanged();
     void echoesChanged();
     void errorChanged();
+    void wrapupChanged();
+    void candidatesChanged();
+    // Something landed on the clipboard (what, for the toast).
+    void copied(const QString &what);
 
 private:
     void setConnected(bool on);
@@ -138,12 +184,16 @@ private:
     void startService();
     void upsert(const QVariantMap &meeting);
     void showLive();
+    void fetchWrapup(const QString &id);
+    static QString path(const QString &id, const QString &rest = {});
     static Transcript::Line lineFrom(const QJsonObject &segment);
 
     QUrl m_url;
     QNetworkAccessManager m_network;
     QPointer<QNetworkReply> m_stream;
     QPointer<QNetworkReply> m_fetch;
+    QPointer<QNetworkReply> m_wrapupFetch;
+    QPointer<QNetworkReply> m_candidatesFetch;
     QByteArray m_buffer;
     QTimer m_retry;
     Transcript m_transcript;
@@ -160,4 +210,8 @@ private:
     QVariantList m_channels;
     QList<QVariantMap> m_interims;
     int m_echoes = 0;
+    QVariantMap m_wrapup, m_call, m_settings;
+    QVariantList m_candidates;
+    bool m_candidatesLoading = false;
+    QString m_candidatesError;
 };

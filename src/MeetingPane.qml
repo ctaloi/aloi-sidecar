@@ -1,11 +1,11 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Controls.Material
 import QtQuick.Layouts
 import "sidecar.js" as Sidecar
 
 // The meeting on screen: what it is (the title, which you can rename),
-// when and how long, the switches for it while it's on, and what was said.
+// when and how long, the switches for it, and then either what was said or,
+// once it's over, what it came to.
 Rectangle {
     id: pane
     color: ui.window
@@ -15,20 +15,35 @@ Rectangle {
     readonly property bool has: m.id !== undefined
     readonly property bool isCurrent: has && m.id === engine.current
     readonly property bool live: isCurrent && engine.listening
+    readonly property bool over: has && m.state === "ended"
+    readonly property string stage: Sidecar.stage(m)
     property alias transcriptPane: transcriptView
-    function rename() { if (has) { titleEdit.text = m.title; editing = true; titleEdit.forceActiveFocus(); titleEdit.selectAll() } }
     property bool editing: false
+    // Notes or Transcript, for a meeting that's over. A meeting opens on its
+    // notes once it has them, and on its transcript until then.
+    property string tab: "notes"
+    readonly property bool notesShown: over && tab === "notes"
+    onMChanged: if (m.id !== shownId) { shownId = m.id || ""; tab = "notes" }
+    property string shownId: ""
+
+    function rename() { if (has) { titleEdit.text = m.title; editing = true; titleEdit.forceActiveFocus(); titleEdit.selectAll() } }
+    function toggleTab() { if (over) tab = tab === "notes" ? "transcript" : "notes" }
+    function showLine(id) { tab = "transcript"; Qt.callLater(() => transcriptView.showLine(id)) }
+    function revertNotes() { wrapupView.revert() }
+    function openMenu() { if (has) meetingMenu.show(m, moreButton, 0, moreButton.height + 4) }
 
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
+
+        CallBanner { Layout.fillWidth: true }
 
         // What the meeting is.
         ColumnLayout {
             Layout.fillWidth: true
             Layout.leftMargin: pane.width < 520 ? 18 : 32
             Layout.rightMargin: pane.width < 520 ? 18 : 32
-            Layout.topMargin: 22
+            Layout.topMargin: 20
             spacing: 10
             visible: pane.has
 
@@ -38,39 +53,50 @@ Rectangle {
                 font.pixelSize: 11
             }
 
-            Item {
+            RowLayout {
                 Layout.fillWidth: true
-                implicitHeight: Math.max(title.implicitHeight, titleEdit.implicitHeight)
-                Label {
-                    id: title
-                    visible: !pane.editing
-                    width: parent.width
-                    text: pane.m.title || ""
-                    color: ui.text
-                    font.pixelSize: 26
-                    font.bold: true
-                    wrapMode: Text.Wrap
-                    maximumLineCount: 2
-                    elide: Text.ElideRight
-                    HoverHandler { id: titleHover; cursorShape: Qt.IBeamCursor }
-                    TapHandler { onDoubleTapped: pane.rename() }
-                    ToolTip.visible: titleHover.hovered
-                    ToolTip.delay: 900
-                    ToolTip.text: qsTr("Double-click or R to rename")
+                spacing: 12
+                Item {
+                    Layout.fillWidth: true
+                    implicitHeight: Math.max(title.implicitHeight, titleEdit.implicitHeight)
+                    Label {
+                        id: title
+                        visible: !pane.editing
+                        width: parent.width
+                        text: pane.m.title || ""
+                        color: ui.text
+                        font.pixelSize: 26
+                        font.bold: true
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                        HoverHandler { id: titleHover; cursorShape: Qt.IBeamCursor }
+                        TapHandler { onDoubleTapped: pane.rename() }
+                        ToolTip.visible: titleHover.hovered
+                        ToolTip.delay: 900
+                        ToolTip.text: qsTr("Double-click or R to rename")
+                    }
+                    TextInput {
+                        id: titleEdit
+                        visible: pane.editing
+                        width: parent.width
+                        color: ui.text
+                        font.pixelSize: 26
+                        font.bold: true
+                        selectByMouse: true
+                        selectionColor: ui.alpha(theme.accent, 0.4)
+                        onAccepted: { engine.rename(pane.m.id, text); pane.editing = false }
+                        Keys.onEscapePressed: pane.editing = false
+                        onActiveFocusChanged: if (!activeFocus) pane.editing = false
+                        Rectangle { anchors.top: parent.bottom; width: parent.width; height: 1; color: theme.accent }
+                    }
                 }
-                TextInput {
-                    id: titleEdit
-                    visible: pane.editing
-                    width: parent.width
-                    color: ui.text
-                    font.pixelSize: 26
-                    font.bold: true
-                    selectByMouse: true
-                    selectionColor: ui.alpha(theme.accent, 0.4)
-                    onAccepted: { engine.rename(pane.m.id, text); pane.editing = false }
-                    Keys.onEscapePressed: pane.editing = false
-                    onActiveFocusChanged: if (!activeFocus) pane.editing = false
-                    Rectangle { anchors.top: parent.bottom; width: parent.width; height: 1; color: theme.accent }
+                ActionButton {
+                    id: moreButton
+                    Layout.alignment: Qt.AlignTop
+                    menu: true
+                    tip: qsTr("Everything for this meeting (right-click it in the list, too)")
+                    onClicked: pane.openMenu()
                 }
             }
 
@@ -87,12 +113,12 @@ Rectangle {
                 Chip {
                     visible: pane.has
                     tone: ui.muted
-                    text: Sidecar.span(pane.m) + (pane.m.state === "ended" ? "  ·  " + Sidecar.length(pane.m, pane.now) : "")
+                    text: Sidecar.span(pane.m) + (pane.over ? "  ·  " + Sidecar.length(pane.m, pane.now) : "")
                 }
                 Chip {
                     visible: pane.has
                     tone: ui.faint
-                    text: qsTr("%n lines", "", transcript.count)
+                    text: qsTr("%n lines", "", pane.isCurrent ? transcript.count : (pane.m.lines || 0))
                 }
                 Chip {
                     visible: pane.has && !!pane.m.event
@@ -100,12 +126,7 @@ Rectangle {
                     glyph: "▦"
                     text: qsTr("From your calendar")
                 }
-                Chip {
-                    visible: pane.has && !!pane.m.notion
-                    tone: ui.them
-                    glyph: "✓"
-                    text: qsTr("In Notion")
-                }
+                StageChip { stage: pane.stage; m: pane.m }
                 Chip {
                     visible: pane.isCurrent && engine.echoes > 0
                     tone: ui.faint
@@ -113,12 +134,14 @@ Rectangle {
                 }
             }
 
-            // The switches: while it's on, listen/pause and end; afterwards, copy.
+            // The switches: while it's on, listen/pause and end; afterwards,
+            // the notes and the transcript as tabs.
             Flow {
                 Layout.fillWidth: true
                 Layout.topMargin: 4
-                Layout.bottomMargin: 16
+                Layout.bottomMargin: pane.over ? 0 : 16
                 spacing: 8
+                visible: !pane.over
                 ActionButton {
                     visible: pane.isCurrent
                     primary: true
@@ -130,14 +153,7 @@ Rectangle {
                     visible: pane.isCurrent
                     text: qsTr("End meeting")
                     keys: "E"
-                    onClicked: endDialog.open()
-                }
-                ActionButton {
-                    visible: !pane.isCurrent
-                    primary: engine.current === ""
-                    text: qsTr("New meeting")
-                    keys: "ctrl+N"
-                    onClicked: win.newMeeting()
+                    onClicked: win.act("end", pane.m)
                 }
                 ActionButton {
                     text: qsTr("Rename")
@@ -145,38 +161,39 @@ Rectangle {
                     onClicked: pane.rename()
                 }
                 ActionButton {
-                    text: copied.running ? qsTr("Copied") : qsTr("Copy transcript")
+                    text: qsTr("Copy transcript")
+                    keys: "shift+C"
                     enabled: transcript.count > 0
-                    onClicked: { engine.copyToClipboard(engine.transcriptText()); copied.restart() }
-                    Timer { id: copied; interval: 1500 }
+                    onClicked: win.act("copyTranscript", pane.m)
                 }
+            }
+            UnderlineTabs {
+                Layout.fillWidth: true
+                Layout.leftMargin: -10
+                visible: pane.over
+                tabs: [
+                    { label: qsTr("Notes"), count: 0, current: pane.tab === "notes", keys: "T", run: () => pane.tab = "notes",
+                      dot: pane.stage === "drafting" || pane.stage === "ready" || pane.stage === "draftFailed" || pane.stage === "sendFailed" },
+                    { label: qsTr("Transcript"), count: pane.m.lines || 0, current: pane.tab === "transcript", keys: "T", run: () => pane.tab = "transcript" }
+                ]
             }
         }
 
         Rectangle { Layout.fillWidth: true; height: 1; color: ui.line; visible: pane.has }
 
-        TranscriptPane {
-            id: transcriptView
+        StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            currentIndex: pane.notesShown ? 1 : 0
+            TranscriptPane { id: transcriptView }
+            WrapupPane {
+                id: wrapupView
+                now: pane.now
+                onShowLine: id => pane.showLine(id)
+            }
         }
     }
 
-    Dialog {
-        id: endDialog
-        anchors.centerIn: Overlay.overlay
-        modal: true
-        title: qsTr("End “%1”?").arg(pane.m.title || "")
-        width: Math.min(460, win.width - 40)
-        Material.roundedScale: theme.radius
-        Label {
-            width: endDialog.availableWidth
-            wrapMode: Text.Wrap
-            text: qsTr("Listening stops and the meeting is kept as it is. Space after this starts a new one.")
-        }
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: engine.endMeeting()
-    }
-    function confirmEnd() { if (isCurrent) endDialog.open() }
-    readonly property bool dialogOpen: endDialog.visible
+    MeetingMenu { id: meetingMenu }
+
 }

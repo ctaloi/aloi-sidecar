@@ -12,6 +12,17 @@ Rectangle {
 
     readonly property bool following: list.stick
     function toLive() { list.stick = true; list.positionViewAtEnd() }
+    // Scroll to a line (from a wrap-up item) and light it up for a moment.
+    function showLine(id) {
+        const row = transcript.rowOf(id)
+        if (row < 0) return
+        list.stick = false
+        list.positionViewAtIndex(row, ListView.Center)
+        flash = id
+        flashTimer.restart()
+    }
+    property int flash: -1
+    Timer { id: flashTimer; interval: 2200; onTriggered: pane.flash = -1 }
 
     ListView {
         id: list
@@ -39,6 +50,7 @@ Rectangle {
         delegate: Item {
             id: row
             required property int index
+            required property int lineId
             required property string speaker
             required property string text
             required property string time
@@ -49,6 +61,16 @@ Rectangle {
             readonly property bool sameAsAbove: !runStart
             width: list.width
             height: body.implicitHeight + (sameAsAbove ? 4 : 12)
+
+            Rectangle {
+                anchors.fill: parent
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                radius: Math.min(4, theme.radius)
+                color: ui.alpha(theme.accent, 0.14)
+                opacity: pane.flash === row.lineId ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 400 } }
+            }
 
             Text {
                 id: stamp

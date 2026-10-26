@@ -158,6 +158,27 @@ Rectangle {
             }
         }
 
+        // Sidecar's own settings, few on purpose.
+        ActionButton {
+            id: settingsButton
+            menu: true
+            implicitHeight: 30
+            tip: qsTr("Settings")
+            onClicked: settingsMenu.popup(settingsButton, settingsButton.width - 300, settingsButton.height + 6)
+            SideMenu {
+                id: settingsMenu
+                MenuRow {
+                    text: qsTr("Offer to listen when an app uses the mic")
+                    setting: true
+                    on: engine.settings.watch_calls !== false
+                    onTriggered: engine.setSetting("watch_calls", !(engine.settings.watch_calls !== false))
+                }
+                MenuLine {}
+                MenuRow { text: qsTr("Show the meetings folder"); onTriggered: Qt.openUrlExternally("file://" + engine.meetingFolder("")) }
+                MenuRow { text: qsTr("Show the trash folder"); onTriggered: Qt.openUrlExternally("file://" + engine.meetingFolder("").replace(/meetings\/$/, "trash")) }
+            }
+        }
+
         Row {
             spacing: 6
             KeyCap { text: "?"; anchors.verticalCenter: parent.verticalCenter }

@@ -6,6 +6,8 @@ Claude Code.
 
 ![Sidecar during a call, answering a question](docs/answer-1440x900.png)
 
+![A meeting's wrap-up, ready to send to Notion](docs/review-1440x900.png)
+
 - **Hears both sides.** Your mic is "Me"; every speaker output (laptop,
   each display) is "Them", so it doesn't matter where the call's audio goes
   or which app the call is in. Speech is transcribed on this machine with
@@ -26,6 +28,22 @@ Claude Code.
   first, then today, yesterday, this week and earlier. Open one to read it
   and ask about it: each meeting has its own conversation with the agent,
   which sees that meeting's transcript and no other.
+- **Every meeting gets a wrap-up.** When a meeting ends, Opus reads all of
+  it and drafts a summary, what you have to do, what the others committed
+  to, decisions and open questions, each linked to the moment it was said.
+  You edit it in place (edits are kept apart from the draft), then **Send
+  to Notion** files it in your private My Meetings database: a new page, or
+  filling in one something else already made that day. Meetings waiting
+  for this sit under **Needs wrap-up**.
+- **Right-click any meeting** (or `Menu`, or the ⋯ by its title) for
+  everything else: draft again, send, open in Notion, copy the wrap-up or
+  transcript, mark it as needing no wrap-up, show its files, delete it (to
+  `~/.local/share/aloi-sidecar/trash`).
+- **It notices calls.** When another app (Teams, Zoom, a browser tab)
+  holds the mic for more than a few seconds, a notification offers to
+  listen; when the call lets go of it, another offers to end the meeting,
+  which ends by itself after two quiet minutes. Dictation (Superwhisper)
+  doesn't count. Turn it off in the settings menu (⋯ at the top).
 
 ## Nothing changes by itself
 
@@ -53,9 +71,17 @@ The agent runs like Aloi Tix's: `claude -p` in
 | Key | Action |
 |-----|--------|
 | `Space` | Listen / pause (starts a meeting if none is on) |
-| `E` | End the meeting |
+| `E` | End the meeting (Opus drafts its wrap-up) |
 | `Ctrl+N` | Start a new meeting |
 | `R` | Rename the meeting on screen |
+| `T` | Notes / transcript |
+| `D` | Draft the wrap-up (again) |
+| `S` | Send to Notion |
+| `O` | Open it in Notion |
+| `C` / `Shift+C` | Copy the wrap-up as Markdown / the transcript |
+| `X` | No wrap-up needed (or needed after all) |
+| `Menu` / `Shift+F10` | Everything for the meeting (or right-click it) |
+| `Del` | Delete the meeting (to the trash folder) |
 | `J` / `K` | Next / previous meeting |
 | `G` | Go to the meeting that's on now |
 | `\` | Show / hide the meetings list |
@@ -80,7 +106,12 @@ The agent runs like Aloi Tix's: `claude -p` in
   (`GET /meetings`, `GET`/`PATCH /meeting/<id>`, `POST /meeting/start`,
   `POST /meeting/end`), listens only while asked (`POST /listen`), streams
   lines, live previews and levels from `GET /events`, and drops your mic's
-  copy of what the speakers played.
+  copy of what the speakers played. It drafts wrap-ups (`engine/wrapup.py`,
+  `claude -p` with a JSON schema, no tools, on your login) into each
+  meeting's `wrapup.json`, sends them to Notion (`engine/notion.py`, with the
+  integration token from the keyring: `secret-tool lookup service
+  aloi-sidecar account notion`), and watches PipeWire for calls
+  (`engine/calls.py`). Settings live in `~/.config/aloi-sidecar/settings.json`.
   `http://127.0.0.1:8777` is a plain web view with a direct Claude ask box,
   kept as a fallback (it uses the key linked at
   `~/.config/aloi-sidecar/api-key`).
@@ -93,6 +124,7 @@ The agent runs like Aloi Tix's: `claude -p` in
 ```sh
 bin/build      # build/aloi-sidecar
 bin/test       # unit tests, then the window offscreen at three sizes
+engine/.venv/bin/python tests/engine_wrapup.py   # wrap-up and Send against a fake Claude and Notion
 bin/shots      # screenshots into docs/, against the stand-in engine and Claude
 bin/install    # the engine's environment, models and service, then the package
 ```
