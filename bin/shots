@@ -1,0 +1,18 @@
+#!/bin/sh
+# The window offscreen, against the stand-in engine and Claude:
+#   bin/shots [--check] [WxH] [--out DIR]   (screenshots land in docs/ by default)
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build/shots"
+(cd "$ROOT/build/shots" && qmake6 "$ROOT/tests/shots/shots.pro" >/dev/null && make -j"$(nproc)" >/dev/null)
+
+PORT=$((20000 + $$ % 20000))
+"$ROOT/engine/.venv/bin/python" "$ROOT/tests/fake/engine.py" "$PORT" &
+FAKE=$!
+trap 'kill $FAKE 2>/dev/null' EXIT
+i=0; until curl -s -o /dev/null -X POST "http://127.0.0.1:$PORT/meeting/new" || [ $i -gt 30 ]; do i=$((i+1)); sleep 0.2; done
+
+cd "$ROOT"
+SIDECAR_ENGINE="http://127.0.0.1:$PORT" SIDECAR_CLAUDE="$ROOT/tests/fake/claude" \
+    QT_FORCE_STDERR_LOGGING=1 "$ROOT/build/shots/shots" "$@"

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#FFD60A"/>
+  <!-- A speech bubble with a sound wave inside, and a small sidecar bubble beside it. -->
+  <path d="M10 16h30a4 4 0 0 1 4 4v18a4 4 0 0 1-4 4H22l-8 7v-7h-4a4 4 0 0 1-4-4V20a4 4 0 0 1 4-4z" fill="#0e0e10"/>
+  <path d="M15 29v4M20 25v12M25 22v18M30 26v10M35 29v4" stroke="#FFD60A" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M47 28h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2v4l-4-4h-3a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2z" fill="#0e0e10"/>
+  <circle cx="51.5" cy="34.5" r="2" fill="#FFD60A"/>
+</svg>

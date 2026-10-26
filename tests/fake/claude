@@ -1,0 +1,12 @@
+#!/bin/sh
+# A stand-in for `claude -p`: reads the prompt and streams a fixed answer
+# with one skill lookup, in Claude Code's stream-json shape.
+cat > /dev/null
+emit() { printf '%s\n' "$1"; sleep 0.05; }
+emit '{"type":"system","subtype":"init"}'
+emit '{"type":"stream_event","event":{"type":"content_block_start","content_block":{"type":"tool_use","name":"Skill"}}}'
+emit '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Skill","input":{"skill":"telescope-expert"}}]}}'
+for word in "**Two" " asks" " for" " you:**\n\n" "- Pricing" " for" " two" " conference" " phones" " (you" " said" " today)\n" "- Holiday" " hours" " on" " the" " auto" " attendant" " (just" " asked," " not" " answered" " yet)\n\n" "Their" " outbound" " numbers" " show" " **Spam" " Likely**" " on" " 2" " of" " 3" " carriers" " in" " Telescope."; do
+  emit "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"$word\"}}}"
+done
+emit '{"type":"result","is_error":false,"result":"ok"}'

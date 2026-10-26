@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Aloi Sidecar
+Comment=A live transcript of your meeting, and an agent to ask about it
+Exec=aloi-sidecar
+Icon=aloi-sidecar
+Terminal=false
+Categories=Office;AudioVideo;
+Keywords=sidecar;meeting;transcript;call;teams;notes;agent;
+StartupWMClass=aloi-sidecar

@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+mkdir -p "$ROOT/build/tests"
+cd "$ROOT/build/tests"
+
+qmake6 "$ROOT/tests/sidecar_tests.pro" >/dev/null
+make -j"$(nproc)" >/dev/null
+QT_QPA_PLATFORM=offscreen ./sidecar_tests
+
+# The window itself against the stand-ins, failing on a QML warning: at a
+# desktop size, Omarchy's half of a laptop screen, and a narrow tile.
+for size in 1280x820 989x823 640x800; do
+    "$ROOT/bin/shots" --check "$size" --out "$ROOT/build/shots/out"
+done

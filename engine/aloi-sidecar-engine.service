@@ -1,0 +1,13 @@
+[Unit]
+Description=Aloi Sidecar engine (live meeting transcript)
+After=pipewire-pulse.service
+
+[Service]
+# Installed by bin/install with @ENGINE@ replaced by the engine's folder.
+ExecStart=@ENGINE@/.venv/bin/python @ENGINE@/engine.py
+Restart=on-failure
+RestartSec=3
+Nice=5
+
+[Install]
+WantedBy=default.target

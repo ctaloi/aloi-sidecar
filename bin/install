@@ -1,0 +1,21 @@
+#!/bin/sh
+# Installs the app as a package (so it's in the launcher) and the engine as a
+# systemd user service run from this checkout.
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+
+# The engine: its Python environment, the speech models, and the service.
+(cd "$ROOT/engine" && uv sync --quiet)
+"$ROOT/engine/.venv/bin/python" "$ROOT/engine/models.py"
+UNIT="$HOME/.config/systemd/user/aloi-sidecar-engine.service"
+mkdir -p "$(dirname "$UNIT")"
+sed "s|@ENGINE@|$ROOT/engine|g" "$ROOT/engine/aloi-sidecar-engine.service" > "$UNIT.tmp"
+mv "$UNIT.tmp" "$UNIT"
+systemctl --user daemon-reload
+systemctl --user enable aloi-sidecar-engine.service
+systemctl --user restart aloi-sidecar-engine.service
+
+"$ROOT/bin/build"
+cd "$ROOT/pkgbuild"
+exec makepkg -fsi "$@"
