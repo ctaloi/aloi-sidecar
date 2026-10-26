@@ -440,8 +440,9 @@ Item {
         parts.push(root.t("row.left", { time: root.span(Math.ceil((Date.parse(row.event.end) - root.now) / 60000)) }))
       }
       if (row.event.response === "declined") parts.push(root.t("row.declined"))
-      else if (row.event.response === "tentativelyaccepted" || row.event.showAs === "tentative") parts.push(root.t("row.tentative"))
+      else if (row.event.response === "tentativelyaccepted") parts.push(root.t("row.tentative"))
       else if (row.event.response === "notresponded" || row.event.response === "none" && !row.event.isOrganizer) parts.push(root.t("row.notResponded"))
+      else if (row.event.showAs === "tentative") parts.push(root.t("row.tentative"))
       if (row.event.showAs === "free" && row.event.response !== "declined") parts.push(root.t("row.free"))
       if (row.event.organizer !== "" && !row.event.isOrganizer) parts.push(row.event.organizer)
       if (row.event.location !== "") parts.push(row.event.location)

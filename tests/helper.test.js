@@ -40,6 +40,8 @@ test("the Teams link comes from the meeting itself", () => {
   assert.equal(e.organizer, "Dana Ruiz")
   assert.equal(e.provider, "teamsforbusiness")
   assert.equal(e.start, "2026-10-26T13:30:00Z")
+  // "Microsoft Teams Meeting" only restates the Join button.
+  assert.equal(e.location, "")
 })
 
 test("a Zoom link in the location is found, and the location isn't repeated", () => {

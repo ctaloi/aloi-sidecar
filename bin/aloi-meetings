@@ -377,6 +377,8 @@ JOIN = re.compile(
     r"|meet\.goto\.com/[^\s\"'<>]+"
     r"|global\.gotomeeting\.com/join/[^\s\"'<>]+"
     r")", re.I)
+# Locations that only restate that there's a link; the Join button says it.
+PLACEHOLDER_LOCATIONS = {"microsoft teams meeting", "microsoft teams", "teams meeting", "zoom", "zoom meeting", "google meet"}
 SAFELINK = re.compile(r"https://[a-z0-9.]*safelinks\.protection\.outlook\.com/\?[^\s\"'<>]+", re.I)
 
 
@@ -451,7 +453,7 @@ def shape_event(g):
         "response": ((g.get("responseStatus") or {}).get("response") or "").lower(),
         "isOrganizer": bool(g.get("isOrganizer")),
         "organizer": organizer.get("name") or organizer.get("address") or "",
-        "location": "" if JOIN.fullmatch(location.strip()) else location.strip(),
+        "location": "" if JOIN.fullmatch(location.strip()) or location.strip().lower() in PLACEHOLDER_LOCATIONS else location.strip(),
         "joinUrl": join,
         "provider": (g.get("onlineMeetingProvider") or "").lower(),
         "webLink": g.get("webLink", ""),
