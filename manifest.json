@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "aloi.meetings",
+  "name": "Aloi Meetings",
+  "version": "0.1.0",
+  "author": "Chris Aloi",
+  "license": "MIT",
+  "description": "Your next Microsoft 365 meeting in the bar, and today's meetings with a Join button.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Aloi Meetings",
+    "description": "Next meeting within half an hour, today's list, one-click join",
+    "category": "Productivity",
+    "aliases": ["meetings", "calendar", "outlook", "teams", "zoom", "agenda"],
+    "allowMultiple": false,
+    "defaultSection": "left",
+    "defaults": {
+      "withinMinutes": 30,
+      "maxTitleLength": 28,
+      "showWhenIdle": true,
+      "zoomApp": true,
+      "timeFormat": "h:mm AP"
+    },
+    "schema": [
+      { "key": "withinMinutes", "type": "enum", "options": [10, 15, 30, 60], "defaultValue": 30,
+        "label": "Show a meeting", "description": "How many minutes before it starts the meeting appears in the bar" },
+      { "key": "maxTitleLength", "type": "integer", "min": 10, "max": 60, "step": 2, "defaultValue": 28,
+        "label": "Title length", "description": "Longer titles are shortened in the bar" },
+      { "key": "showWhenIdle", "type": "boolean", "defaultValue": true,
+        "label": "Calendar icon when free", "description": "Keep a small icon in the bar so today's list is always a click away" },
+      { "key": "zoomApp", "type": "boolean", "defaultValue": true,
+        "label": "Join Zoom in the app", "description": "Open Zoom links in the Zoom app when it's installed" },
+      { "key": "timeFormat", "type": "string", "defaultValue": "h:mm AP",
+        "label": "Time format", "description": "Qt time format for the list, such as h:mm AP or HH:mm" }
+    ]
+  }
+}
