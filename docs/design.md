@@ -198,3 +198,13 @@ the page fits what's already there rather than a guessed schema.
 5. **The UI pass throughout,** to Tix and Smokeping's standard: the header
    frame, the left list with sections and counts, chips, key hints on
    buttons, a quiet composer, and screenshots at three sizes.
+
+## Notion: the real "My Meetings" database (read 2026-10-26)
+
+The integration token is in the keyring (`secret-tool lookup service aloi-sidecar account notion`) and sees one database: **My Meetings**, `21553fc0-1092-80f5-b264-e9a451b14cee`.
+
+Properties: `Meeting Title` (title), `Date` (date), `Summary` (text), `Duration` (text), `Topic` (text), `Met with` (multi-select of companies and people), `Tags` (multi-select, long and messy), `Format` (select: Video, Phone, In person), `Status` (select: published, no-transcript, external, failed), `Attendees`, `Internal Attendees` and `Organizer` (people), `Source` (url), `PlaudeAI` (checkbox), `Files & media`, `Meeting Date` (created time).
+
+Pages already written by the existing pipeline have this body: `## TL;DR`, a paragraph, `## Topics` with a `###` per topic and bullets, then a toggle "Full transcript". Sidecar's pages follow the same shape, adding `## My follow-ups` (to-dos), `## Their commitments`, `## Decisions` and `## Open questions` before the transcript toggle.
+
+Something else already adds today's meetings here ("LNM" and "Nortridge Integration" appeared with only a title and Summary). Send must look for a page with the same title on the same day first, and offer to fill that page in rather than make a duplicate.
