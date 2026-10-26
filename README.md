@@ -24,7 +24,7 @@ the meeting runs (*8m left*), so running late doesn't make it vanish.
 ## How it works
 
 `bin/aloi-meetings` signs in to Microsoft 365 in your browser with Vaspian's
-existing app registration (the one vmail uses). It asks only for
+own app registration, "Aloi vmail", shared with vmail and vteams. It asks only for
 `Calendars.Read` and keeps the sign-in in the desktop keyring. It has its own
 sign-in, separate from vmail's, because two apps sharing one refresh token
 would keep logging each other out.

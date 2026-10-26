@@ -37,8 +37,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-# The Vaspian app registration vmail uses: a public client with Calendars.Read.
-DEFAULT_CLIENT_ID = "d14621bd-e9ba-40d1-8849-e9ac51d408fd"
+# "Aloi vmail", the Vaspian app registration shared by vmail, vteams and
+# these plugins: a public client with delegated mail, calendar and chat access.
+DEFAULT_CLIENT_ID = "367e59f5-6cf7-48c7-89e4-21021559a333"
 DEFAULT_TENANT = "bab5c5fb-b019-47ba-b72d-0874689da097"
 SCOPES = "https://graph.microsoft.com/Calendars.Read https://graph.microsoft.com/User.Read offline_access openid profile"
 GRAPH = "https://graph.microsoft.com/v1.0"
