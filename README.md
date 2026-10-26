@@ -1,7 +1,7 @@
 # Aloi Meetings
 
 Your next Microsoft 365 meeting, right in the Omarchy bar. A small calendar
-icon sits at the end of the bar's left side. Half an hour before a meeting it
+icon sits in the middle of the bar, just left of the clock. Half an hour before a meeting it
 becomes the meeting's title and a countdown: *Standup · in 12m*. It stays while
 the meeting runs (*8m left*), so running late doesn't make it vanish.
 
@@ -46,7 +46,7 @@ for f in manifest.json BarWidget.qml MeetingsContent.qml Service.qml Model.js Re
   ln -sfn ~/Work/meetings/$f $d/$f
 done
 omarchy-shell shell rescanPlugins
-omarchy plugin enable aloi.meetings --section left --after omarchy.active-window
+omarchy plugin enable aloi.meetings --section centerEnd --before omarchy.clock
 ```
 
 Click the icon and choose **Sign in with Microsoft**.

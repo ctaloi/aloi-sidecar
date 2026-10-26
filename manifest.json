@@ -21,7 +21,7 @@
     "category": "Productivity",
     "aliases": ["meetings", "calendar", "outlook", "teams", "zoom", "agenda"],
     "allowMultiple": false,
-    "defaultSection": "left",
+    "defaultSection": "centerEnd",
     "defaults": {
       "withinMinutes": 30,
       "maxTitleLength": 28,
