@@ -16,27 +16,88 @@ class SidecarTests : public QObject {
     }
 
 private slots:
-    void transcriptFromEvents() {
+    static QJsonObject meeting(const QString &id, const QString &state, double started) {
+        return {{"id", id}, {"title", "Meeting " + id}, {"state", state}, {"started", started}, {"lines", 0}};
+    }
+
+    void liveMeetingFromEvents() {
         Engine engine("http://127.0.0.1:1");
-        engine.handleEvent({{"type", "meeting"}, {"meeting", "2026-10-26_100000"}, {"path", "/x.jsonl"}});
-        engine.handleEvent(segment(0, "Them", "Hello there"));
-        engine.handleEvent(segment(1, "Them", "Second line"));
-        engine.handleEvent(segment(2, "Chris", "Hi"));
+        engine.handleEvent({{"type", "meetings"}, {"meetings", QJsonArray{meeting("b", "live", 2000), meeting("a", "ended", 1000)}}});
+        engine.handleEvent({{"type", "state"}, {"listening", true}, {"current", "b"}});
+        QCOMPARE(engine.current(), QString("b"));
+        QCOMPARE(engine.selected(), QString("b"));  // the live meeting comes on screen
+        QVERIFY(engine.listening());
+        auto seg = [](int id, const QString &who, const QString &text, const QString &m) {
+            QJsonObject s = segment(id, who, text);
+            s.insert("meeting", m);
+            return s;
+        };
+        engine.handleEvent(seg(0, "Them", "Hello there", "b"));
+        engine.handleEvent(seg(1, "Them", "Second line", "b"));
+        engine.handleEvent(seg(2, "Chris", "Hi", "b"));
+        engine.handleEvent(seg(0, "Them", "From another meeting", "a"));  // not the live one: ignored
         auto *t = engine.transcript();
         QCOMPARE(t->count(), 3);
         QCOMPARE(t->data(t->index(1), Transcript::RunStartRole).toBool(), false);
         QCOMPARE(t->data(t->index(2), Transcript::RunStartRole).toBool(), true);
         QCOMPARE(t->data(t->index(2), Transcript::MineRole).toBool(), true);
         QCOMPARE(t->textAfter(0), QString("[10:00:01] Them: Second line\n[10:00:02] Chris: Hi"));
+    }
 
-        // A new meeting starts the transcript over.
-        engine.handleEvent({{"type", "meeting"}, {"meeting", "2026-10-26_120000"}, {"path", "/y.jsonl"}});
-        QCOMPARE(t->count(), 0);
-        QCOMPARE(engine.meeting(), QString("2026-10-26_120000"));
+    void reviewingAPastMeeting() {
+        Engine engine("http://127.0.0.1:1");
+        engine.handleEvent({{"type", "meetings"}, {"meetings", QJsonArray{meeting("b", "live", 2000), meeting("a", "ended", 1000)}}});
+        engine.handleEvent({{"type", "state"}, {"listening", true}, {"current", "b"}});
+        QJsonObject live = segment(0, "Them", "Live line");
+        live.insert("meeting", "b");
+        engine.handleEvent(live);
+        engine.handleEvent({{"type", "interim"}, {"label", "Mic"}, {"speaker", "Chris"}, {"text", "so I"}});
+        QCOMPARE(engine.interims().size(), 1);
+
+        engine.select("a");
+        QCOMPARE(engine.selected(), QString("a"));
+        QCOMPARE(engine.transcript()->count(), 0);
+        QCOMPARE(engine.interims().size(), 0);  // the live preview belongs to the live meeting
+        QJsonObject old{{"id", 0}, {"speaker", "Them"}, {"text", "An old line"}, {"start", 1000.0}, {"end", 1003.0}};
+        engine.handleMeeting({{"meeting", meeting("a", "ended", 1000)}, {"segments", QJsonArray{old}}});
+        QCOMPARE(engine.transcript()->count(), 1);
+
+        // Live lines keep coming in the background, and are there on the way back.
+        QJsonObject more = segment(1, "Chris", "Another live line");
+        more.insert("meeting", "b");
+        engine.handleEvent(more);
+        QCOMPARE(engine.transcript()->count(), 1);
+        engine.select("b");
+        QCOMPARE(engine.transcript()->count(), 2);
+    }
+
+    void meetingsStayNewestFirst() {
+        Engine engine("http://127.0.0.1:1");
+        engine.handleEvent({{"type", "meetings"}, {"meetings", QJsonArray{meeting("b", "ended", 2000), meeting("a", "ended", 1000)}}});
+        engine.handleEvent({{"type", "meeting"}, {"meeting", meeting("c", "live", 3000)}});
+        QCOMPARE(engine.meetings().first().toMap().value("id").toString(), QString("c"));
+        QJsonObject renamed = meeting("b", "ended", 2000);
+        renamed.insert("title", "Renamed");
+        engine.handleEvent({{"type", "meeting"}, {"meeting", renamed}});
+        QCOMPARE(engine.meetings().size(), 3);
+        QCOMPARE(engine.meetingById("b").value("title").toString(), QString("Renamed"));
+        engine.handleEvent({{"type", "meeting_removed"}, {"id", "c"}});
+        QCOMPARE(engine.meetings().size(), 2);
+    }
+
+    void describeAMeeting() {
+        QVariantMap m{{"title", "Weekly ops"}, {"started", 1793037600.0}, {"ended", 1793039400.0}, {"state", "ended"}};
+        const QString about = Agent::describe(m);
+        QVERIFY(about.startsWith("Meeting: \"Weekly ops\""));
+        QVERIFY(about.contains("going back over it"));
+        m["state"] = "live";
+        QVERIFY(Agent::describe(m).contains("happening now"));
     }
 
     void interimsComeAndGo() {
         Engine engine("http://127.0.0.1:1");
+        engine.handleEvent({{"type", "meetings"}, {"meetings", QJsonArray{meeting("b", "live", 2000)}}});
+        engine.handleEvent({{"type", "state"}, {"listening", true}, {"current", "b"}});
         engine.handleEvent({{"type", "interim"}, {"label", "Mic"}, {"speaker", "Chris"}, {"text", "so I"}});
         engine.handleEvent({{"type", "interim"}, {"label", "Mic"}, {"speaker", "Chris"}, {"text", "so I think"}});
         QCOMPARE(engine.interims().size(), 1);
@@ -47,8 +108,8 @@ private slots:
 
     void listeningState() {
         Engine engine("http://127.0.0.1:1");
-        QSignalSpy spy(&engine, &Engine::listeningChanged);
-        engine.handleEvent({{"type", "state"}, {"listening", true}});
+        QSignalSpy spy(&engine, &Engine::stateChanged);
+        engine.handleEvent({{"type", "state"}, {"listening", true}, {"current", "m"}});
         QVERIFY(engine.listening());
         engine.handleEvent({{"type", "levels"}, {"channels", QJsonArray{QJsonObject{{"label", "Mic"}}}}});
         QCOMPARE(engine.channels().size(), 1);
@@ -56,18 +117,21 @@ private slots:
         QVERIFY(!engine.listening());
         QCOMPARE(engine.channels().size(), 0);
         QCOMPARE(spy.count(), 2);
+        QCOMPARE(engine.current(), QString());
     }
 
     void promptCarriesOnlyNewLines() {
         QTemporaryDir state;
         Engine engine("http://127.0.0.1:1");
-        engine.handleEvent({{"type", "meeting"}, {"meeting", "m"}, {"path", "/m.jsonl"}});
         Agent agent(engine.transcript(), "/bin/true", state.path());
-        agent.setMeeting("m");
-        QCOMPARE(agent.prompt("Anything?", true), QString("Nothing has been said in the meeting yet.\n\nChris asks: Anything?"));
+        agent.setMeeting("m", "Meeting: \"Test\", now. It's happening now.");
+        QCOMPARE(agent.prompt("Anything?", true),
+                 QString("Meeting: \"Test\", now. It's happening now.\n\nNothing has been said in the meeting yet.\n\nChris asks: Anything?"));
         engine.handleEvent(segment(0, "Them", "Can you send pricing?"));
         const QString first = agent.prompt("What do I owe?", true);
-        QVERIFY(first.startsWith("The meeting so far:\n<transcript>\n[10:00:00] Them: Can you send pricing?\n</transcript>"));
+        QVERIFY(first.contains("The meeting so far:\n<transcript>\n[10:00:00] Them: Can you send pricing?\n</transcript>"));
+        // Later questions carry only what's new, without the meeting line again.
+        QVERIFY(!agent.prompt("Again?", false).contains("Meeting:"));
         QVERIFY(first.endsWith("Chris asks: What do I owe?"));
     }
 

@@ -52,7 +52,9 @@ int main(int argc, char *argv[]) {
     // for screenshots and tests that must not touch the real meeting.
     Engine engine;
     Agent agent(engine.transcript(), qEnvironmentVariable("SIDECAR_CLAUDE"), qEnvironmentVariable("SIDECAR_STATE"));
-    QObject::connect(&engine, &Engine::meetingChanged, &agent, [&] { agent.setMeeting(engine.meeting()); });
+    QObject::connect(&engine, &Engine::selectedMeetingChanged, &agent, [&] {
+        agent.setMeeting(engine.selected(), Agent::describe(engine.selectedMeeting()));
+    });
 
     // What the agent wants to run beyond a lookup comes in over the bus
     // from its hook, and waits for Chris in the agent panel.

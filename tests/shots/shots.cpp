@@ -54,7 +54,9 @@ int main(int argc, char *argv[]) {
     Engine engine(qEnvironmentVariable("SIDECAR_ENGINE", "http://127.0.0.1:8779"));
     Agent agent(engine.transcript(), qEnvironmentVariable("SIDECAR_CLAUDE"), state.path());
     agent.setApprover(approval ? QDir::currentPath() + "/build/aloi-sidecar" : "/bin/false");
-    QObject::connect(&engine, &Engine::meetingChanged, &agent, [&] { agent.setMeeting(engine.meeting()); });
+    QObject::connect(&engine, &Engine::selectedMeetingChanged, &agent, [&] {
+        agent.setMeeting(engine.selected(), Agent::describe(engine.selectedMeeting()));
+    });
     Instance instance;
     if (approval) {
         if (!instance.claim({})) {
@@ -109,6 +111,13 @@ int main(int argc, char *argv[]) {
         wait(100);
     wait(500);
     window->grabWindow().save(out + "/answer-" + size + ".png");
+
+    // A past meeting, opened to review.
+    engine.select("past-0");
+    for (int i = 0; i < 50 && (engine.loading() || engine.transcript()->count() == 0); ++i)
+        wait(100);
+    wait(500);
+    window->grabWindow().save(out + "/review-" + size + ".png");
 
     std::printf("%s: %d lines, %lld messages, %d warnings\n", qPrintable(size), engine.transcript()->count(),
                 static_cast<long long>(agent.messages().size()), warnings);

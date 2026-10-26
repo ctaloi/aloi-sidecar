@@ -94,16 +94,18 @@ function setLevels(chs) {
   const box = document.getElementById("meters");
   box.innerHTML = chs.map(c => `<span class="meter ${c.speaker === "Them" ? "" : "me"} ${c.alive ? "" : "dead"} ${c.speaking ? "speaking" : ""}">${c.label}<span class="bar"><i style="width:${Math.min(100, Math.sqrt(c.level) * 300)}%"></i></span></span>`).join("");
 }
-let listening = false;
+let listening = false, current = null;
 document.getElementById("listen").onclick = () => fetch("/listen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on: !listening }) });
 const es = new EventSource("/events");
 es.onopen = () => document.getElementById("status").textContent = "live";
 es.onerror = () => document.getElementById("status").textContent = "disconnected";
 es.onmessage = e => {
   const m = JSON.parse(e.data);
-  if (m.type === "meeting") { tx.innerHTML = ""; for (const k in interims) delete interims[k]; }
-  else if (m.type === "state") { listening = m.listening; document.getElementById("listen").textContent = listening ? "Stop listening" : "Start listening"; }
-  else if (m.type === "segment") addSegment(m);
+  if (m.type === "state") {
+    if (m.current !== current) { tx.innerHTML = ""; for (const k in interims) delete interims[k]; current = m.current; }
+    listening = m.listening; document.getElementById("listen").textContent = listening ? "Pause" : "Listen";
+  }
+  else if (m.type === "segment") { if (m.meeting === current) addSegment(m); }
   else if (m.type === "interim") setInterim(m);
   else if (m.type === "levels") setLevels(m.channels);
 };

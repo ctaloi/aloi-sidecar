@@ -2,6 +2,7 @@
 #include "agent.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -66,7 +67,8 @@ void Agent::save() const {
     file.commit();
 }
 
-void Agent::setMeeting(const QString &meeting) {
+void Agent::setMeeting(const QString &meeting, const QString &about) {
+    m_about = about;
     if (meeting == m_meeting)
         return;
     m_meeting = meeting;
@@ -89,10 +91,30 @@ void Agent::setError(const QString &error) {
     emit errorChanged();
 }
 
+QString Agent::describe(const QVariantMap &m) {
+    if (m.isEmpty())
+        return {};
+    const QDateTime start = QDateTime::fromSecsSinceEpoch(qint64(m.value("started").toDouble()));
+    QString when = start.toString("dddd d MMMM, H:mm");
+    const double ended = m.value("ended").toDouble();
+    if (ended > 0)
+        when += "–" + QDateTime::fromSecsSinceEpoch(qint64(ended)).toString("H:mm");
+    const QString state = m.value("state").toString();
+    QString out = QString("Meeting: \"%1\", %2").arg(m.value("title").toString(), when);
+    const QVariantMap event = m.value("event").toMap();
+    if (!event.isEmpty() && !event.value("organizer").toString().isEmpty())
+        out += QString(", organized by %1").arg(event.value("organizer").toString());
+    out += state == "ended" ? QStringLiteral(". It's over; Chris is going back over it.")
+                            : QStringLiteral(". It's happening now.");
+    return out;
+}
+
 QString Agent::systemPrompt() {
     return QStringLiteral(
-        "You're Chris Aloi's sidecar during a live meeting, inside Aloi Sidecar on his desktop. He reads "
-        "you in a side panel while the call goes on, so lead with the answer and keep it to a few lines.\n"
+        "You're Chris Aloi's sidecar for one meeting, inside Aloi Sidecar on his desktop: during the call, "
+        "or afterwards when he goes back over it. He reads you in a side panel, often while the call goes "
+        "on, so lead with the answer and keep it to a few lines.\n"
+        "- You're about this one meeting. Earlier meetings aren't yours to summarize unless he asks.\n"
         "- Each question comes with the lines said since the last one, between <transcript> tags: "
         "\"[time] Chris: …\" is his microphone, \"[time] Them: …\" is everyone else on the call, mixed "
         "together. It's live speech recognition, so names, numbers and jargon get misheard; read past "
@@ -197,12 +219,12 @@ QStringList Agent::arguments(const QString &sessionId, bool resume) const {
 QString Agent::prompt(const QString &question, bool firstOfSession) const {
     const int through = firstOfSession ? -1 : m_sessions.value(m_meeting).sentThrough;
     const QString lines = m_transcript ? m_transcript->textAfter(through) : QString();
-    QString out;
+    QString out = firstOfSession && !m_about.isEmpty() ? m_about + "\n\n" : QString();
     if (!lines.isEmpty())
-        out = (firstOfSession ? QStringLiteral("The meeting so far:\n") : QStringLiteral("Said since your last answer:\n"))
+        out += (firstOfSession ? QStringLiteral("The meeting so far:\n") : QStringLiteral("Said since your last answer:\n"))
               + "<transcript>\n" + lines + "\n</transcript>\n\n";
     else if (firstOfSession)
-        out = QStringLiteral("Nothing has been said in the meeting yet.\n\n");
+        out += QStringLiteral("Nothing has been said in the meeting yet.\n\n");
     return out + "Chris asks: " + question;
 }
 

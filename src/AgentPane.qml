@@ -11,21 +11,62 @@ Rectangle {
     color: ui.panel
 
     property alias input: field
-    readonly property var chips: [
+    readonly property bool over: engine.selectedMeeting.state === "ended"
+    // During a call: catching up. Afterwards: what to take away from it.
+    readonly property var chips: over ? [
+        qsTr("Summarize this meeting"),
+        qsTr("What did I commit to?"),
+        qsTr("What did the others commit to?"),
+        qsTr("What's still open or undecided?")
+    ] : [
         qsTr("What did I miss in the last 5 minutes?"),
         qsTr("Summarize so far"),
         qsTr("What action items have come up?"),
         qsTr("Has anyone asked me something I haven't answered?")
     ]
+    readonly property bool ready: engine.selected !== "" && !engine.loading
     function ask(text) {
-        if (text.trim() === "") return
+        if (text.trim() === "" || !ready) return
         agent.ask(text)
         field.text = ""
     }
 
+    Rectangle { anchors.left: parent.left; width: 1; height: parent.height; color: ui.line }
+
     ColumnLayout {
         anchors.fill: parent
+        anchors.leftMargin: 1
         spacing: 0
+
+        // Who you're talking to, about which meeting, and a way to start over.
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 52
+            Layout.leftMargin: 18
+            Layout.rightMargin: 12
+            spacing: 10
+            Label {
+                text: qsTr("Agent")
+                color: ui.text
+                font.pixelSize: 14
+                font.bold: true
+            }
+            Label {
+                Layout.fillWidth: true
+                text: engine.selectedMeeting.title || ""
+                color: ui.faint
+                font.pixelSize: 12
+                elide: Text.ElideRight
+            }
+            ActionButton {
+                visible: agent.messages.length > 0
+                enabled: !agent.running
+                text: qsTr("New chat")
+                implicitHeight: 30
+                onClicked: agent.forget()
+            }
+        }
+        Rectangle { Layout.fillWidth: true; height: 1; color: ui.line }
 
         ListView {
             id: list
@@ -108,7 +149,7 @@ Rectangle {
             visible: agent.messages.length === 0
             Text {
                 width: parent.width
-                text: qsTr("Ask about the call")
+                text: pane.over ? qsTr("Ask about this meeting") : qsTr("Ask about the call")
                 color: ui.text
                 font.pixelSize: 16
                 font.bold: true
@@ -118,7 +159,7 @@ Rectangle {
                 wrapMode: Text.Wrap
                 color: ui.muted
                 font.pixelSize: 12
-                text: qsTr("Claude reads the transcript and can look things up with your skills: a customer's numbers, your mail and calendar, Notion. Anything beyond a lookup asks you first.")
+                text: qsTr("Claude reads this meeting's transcript, and only this one's, and can look things up with your skills: a customer's numbers, your mail and calendar, Notion. Anything beyond a lookup asks you first.")
             }
         }
 
@@ -239,12 +280,15 @@ Rectangle {
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.margins: 14
+            Layout.leftMargin: 14
+            Layout.rightMargin: 14
+            Layout.topMargin: 12
             spacing: 8
             TextField {
                 id: field
                 Layout.fillWidth: true
-                placeholderText: agent.running ? qsTr("Answering… Esc stops") : qsTr("Ask about the call  ( / )")
+                enabled: pane.ready
+                placeholderText: agent.running ? qsTr("Answering…") : pane.over ? qsTr("Ask about this meeting") : qsTr("Ask about the call")
                 Material.roundedScale: theme.radius
                 font.pixelSize: 14
                 onAccepted: pane.ask(text)
@@ -258,6 +302,22 @@ Rectangle {
                 primary: !agent.running
                 implicitHeight: field.height - 8
                 onClicked: agent.running ? agent.stop() : pane.ask(field.text)
+            }
+        }
+        // The keys that matter here, while you're in the box.
+        Text {
+            Layout.fillWidth: true
+            Layout.leftMargin: 16
+            Layout.topMargin: 6
+            Layout.bottomMargin: 12
+            textFormat: Text.StyledText
+            color: ui.faint
+            font.pixelSize: 11
+            text: {
+                const k = s => "<font color='" + theme.accent + "'>" + s + "</font>"
+                return field.activeFocus
+                    ? k("enter") + " " + qsTr("asks") + "   " + k("esc") + " " + (agent.running ? qsTr("stops") : qsTr("leaves"))
+                    : k("/") + " " + qsTr("asks") + "   " + k("1–4") + " " + qsTr("suggested questions")
             }
         }
     }

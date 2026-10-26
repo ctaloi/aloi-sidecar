@@ -6,5 +6,12 @@
         <file>AgentPane.qml</file>
         <file>KeysOverlay.qml</file>
         <file>ActionButton.qml</file>
+        <file>TopBar.qml</file>
+        <file>KeyCap.qml</file>
+        <file>Logo.qml</file>
+        <file>Chip.qml</file>
+        <file>MeetingList.qml</file>
+        <file>MeetingPane.qml</file>
+        <file>sidecar.js</file>
     </qresource>
 </RCC>

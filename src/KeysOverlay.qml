@@ -12,16 +12,22 @@ Popup {
     Material.roundedScale: theme.radius
 
     readonly property var keys: [
-        ["Space", qsTr("Start / stop listening")],
-        ["/", qsTr("Ask about the call")],
+        ["Space", qsTr("Listen / pause (starts a meeting if none is on)")],
+        ["E", qsTr("End the meeting")],
+        ["Ctrl+N", qsTr("Start a new meeting")],
+        ["R", qsTr("Rename the meeting on screen")],
+        ["J / K", qsTr("Next / previous meeting")],
+        ["G", qsTr("Go to the meeting that's on now")],
+        ["\\", qsTr("Show / hide the meetings list")],
+        ["Ctrl+F", qsTr("Search meetings")],
+        ["/", qsTr("Ask about the meeting on screen")],
         ["1 – 4", qsTr("Ask a suggested question")],
         ["Esc", qsTr("Stop the agent, leave the ask box")],
         ["Y / N", qsTr("Allow / deny what the agent wants to run")],
+        ["Ctrl+Shift+K", qsTr("New chat with the agent")],
         ["End", qsTr("Back to the live end of the transcript")],
-        ["Ctrl+N", qsTr("Start a new meeting")],
-        ["Ctrl+Shift+K", qsTr("Clear the conversation with the agent")],
         ["?", qsTr("These keys")],
-        ["Q", qsTr("Quit (stops listening)")]
+        ["Q", qsTr("Quit (pauses listening)")]
     ]
 
     contentItem: GridLayout {

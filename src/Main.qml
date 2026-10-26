@@ -3,16 +3,21 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 
-// One bar that says whether Sidecar is listening, the transcript as it's
-// said, and the agent beside it. Space listens, / asks, ? shows the keys.
+// One bar that says whether Sidecar is listening; every meeting on the
+// left; the meeting on screen in the middle, as it's said or as it was;
+// and the agent on the right, asked about that meeting and no other.
+// Space listens, / asks, ? shows the keys.
 ApplicationWindow {
     id: win
-    width: 1280
-    height: 820
-    minimumWidth: 560
-    minimumHeight: 420
+    width: 1440
+    height: 900
+    minimumWidth: 720
+    minimumHeight: 480
     visible: true
-    title: engine.listening ? qsTr("Aloi Sidecar · Listening") : qsTr("Aloi Sidecar")
+    title: {
+        const t = engine.selectedMeeting.title
+        return (engine.listening ? "● " : "") + "Aloi Sidecar" + (t ? " · " + t : "")
+    }
     color: ui.window
 
     Material.theme: theme.dark ? Material.Dark : Material.Light
@@ -23,19 +28,21 @@ ApplicationWindow {
 
     Colors { id: ui }
 
+    // The clock the live timer and lengths read.
+    property double now: Date.now()
+    Timer { interval: 1000; repeat: true; running: true; onTriggered: win.now = Date.now() }
+
     readonly property bool typing: activeFocusItem !== null
         && (activeFocusItem instanceof TextInput || (activeFocusItem instanceof TextEdit && !activeFocusItem.readOnly))
-    readonly property bool overlayOpen: keys.visible || newMeetingDialog.visible || quitDialog.visible
+    readonly property bool overlayOpen: keys.visible || newMeetingDialog.visible || quitDialog.visible || meetingPane.dialogOpen
     readonly property bool idle: !typing && !overlayOpen
-    // Side by side when there's room; the agent goes under the transcript in a narrow tile.
-    readonly property bool wide: width >= 860
+    // The list folds away by hand (\), or by itself when there isn't room for three columns.
+    property bool listHidden: false
+    readonly property bool listShown: !listHidden && width >= 1100
 
-    // "13:58, Mon 26 Oct" from the meeting's file name (2026-10-26_135804).
-    function meetingLabel(name) {
-        const m = (name || "").match(/^(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})/)
-        if (!m) return ""
-        const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])
-        return qsTr("Meeting since %1").arg(d.toLocaleString(Qt.locale(), "ddd d MMM, HH:mm"))
+    function newMeeting() {
+        if (engine.current !== "") newMeetingDialog.open()
+        else engine.startMeeting()
     }
 
     Connections {
@@ -48,147 +55,35 @@ ApplicationWindow {
         }
     }
 
-    header: Rectangle {
-        height: 52
-        color: ui.panel
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: ui.line }
-
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 14
-            anchors.rightMargin: 14
-            spacing: 14
-
-            // The one thing that must never be in doubt: is it listening?
-            Rectangle {
-                id: pill
-                implicitWidth: pillRow.implicitWidth + 24
-                implicitHeight: 30
-                radius: Math.min(theme.radius, height / 2)
-                color: engine.listening ? ui.alpha(ui.live, pillMouse.containsMouse ? 0.28 : 0.18)
-                                        : (pillMouse.containsMouse ? ui.hover : ui.raised)
-                border.color: engine.listening ? ui.alpha(ui.live, 0.7) : ui.line
-                Row {
-                    id: pillRow
-                    anchors.centerIn: parent
-                    spacing: 8
-                    Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 10; height: 10; radius: 5
-                        color: engine.listening ? ui.live : !engine.connected ? ui.faint : ui.muted
-                        SequentialAnimation on opacity {
-                            running: engine.listening
-                            loops: Animation.Infinite
-                            NumberAnimation { to: 0.35; duration: 900; easing.type: Easing.InOutSine }
-                            NumberAnimation { to: 1; duration: 900; easing.type: Easing.InOutSine }
-                            onRunningChanged: if (!running) parent.opacity = 1
-                        }
-                    }
-                    Text {
-                        text: !engine.connected ? qsTr("Engine offline")
-                            : engine.listening ? qsTr("Listening") : qsTr("Paused")
-                        color: ui.text
-                        font.pixelSize: 13
-                        font.bold: true
-                    }
-                    Text {
-                        text: "Space"
-                        visible: engine.connected
-                        color: ui.faint
-                        font.pixelSize: 11
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-                MouseArea {
-                    id: pillMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: engine.toggleListening()
-                }
-            }
-
-            ColumnLayout {
-                spacing: 0
-                Layout.fillWidth: true
-                Text {
-                    Layout.fillWidth: true
-                    text: win.meetingLabel(engine.meeting) || qsTr("Aloi Sidecar")
-                    color: ui.text
-                    font.pixelSize: 13
-                    elide: Text.ElideRight
-                }
-                Text {
-                    Layout.fillWidth: true
-                    text: engine.error !== "" ? engine.error
-                        : qsTr("%n lines", "", transcript.count) + (engine.echoes > 0 ? "  ·  " + qsTr("%n echoes dropped", "", engine.echoes) : "")
-                    color: engine.error !== "" ? ui.danger : ui.faint
-                    font.pixelSize: 11
-                    elide: Text.ElideRight
-                }
-            }
-
-            // A meter per input: the mic, the laptop's speakers, each display.
-            Row {
-                spacing: 12
-                visible: win.width > 720
-                Repeater {
-                    model: engine.channels
-                    delegate: Column {
-                        required property var modelData
-                        spacing: 3
-                        opacity: modelData.alive ? 1 : 0.35
-                        Text {
-                            text: modelData.label
-                            color: modelData.speaking ? ui.text : ui.faint
-                            font.pixelSize: 10
-                        }
-                        Rectangle {
-                            width: 54; height: 4
-                            radius: 2
-                            color: ui.raised
-                            Rectangle {
-                                height: parent.height
-                                radius: 2
-                                width: Math.min(parent.width, Math.sqrt(modelData.level) * parent.width * 3)
-                                color: modelData.speaker === "Them" ? ui.them : ui.me
-                                Behavior on width { NumberAnimation { duration: 120 } }
-                            }
-                        }
-                    }
-                }
-            }
-
-            ToolButton {
-                text: qsTr("? keys")
-                font.pixelSize: 12
-                onClicked: keys.open()
-            }
-        }
+    header: TopBar {
+        id: topBar
+        onToggleList: win.listHidden = !win.listHidden
     }
 
-    SplitView {
+    RowLayout {
         anchors.fill: parent
-        orientation: win.wide ? Qt.Horizontal : Qt.Vertical
-        handle: Rectangle {
-            implicitWidth: 1
-            implicitHeight: 1
-            color: SplitHandle.hovered || SplitHandle.pressed ? theme.accent : ui.line
-        }
+        spacing: 0
 
-        TranscriptPane {
-            id: transcriptPane
-            SplitView.fillWidth: true
-            SplitView.fillHeight: true
-            SplitView.minimumWidth: 280
-            SplitView.minimumHeight: 160
+        MeetingList {
+            id: meetingList
+            visible: win.listShown
+            Layout.preferredWidth: 320
+            Layout.fillHeight: true
+            filter: topBar.search.text
+            now: win.now
+        }
+        MeetingPane {
+            id: meetingPane
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumWidth: 300
+            now: win.now
         }
         AgentPane {
             id: agentPane
-            SplitView.preferredWidth: win.wide ? Math.max(380, win.width * 0.38) : win.width
-            SplitView.preferredHeight: win.wide ? win.height : win.height * 0.45
-            SplitView.minimumWidth: 300
-            SplitView.minimumHeight: 200
+            // A third of a wide window; in a narrow tile it shares the room.
+            Layout.preferredWidth: win.width < 960 ? win.width * 0.44 : Math.max(360, Math.min(440, win.width * 0.3))
+            Layout.fillHeight: true
         }
     }
 
@@ -198,16 +93,16 @@ ApplicationWindow {
         id: newMeetingDialog
         anchors.centerIn: Overlay.overlay
         modal: true
-        title: qsTr("Start a new meeting?")
+        title: qsTr("End “%1” and start a new meeting?").arg(engine.meetingById(engine.current).title || "")
         width: Math.min(460, win.width - 40)
         Material.roundedScale: theme.radius
         Label {
             width: newMeetingDialog.availableWidth
             wrapMode: Text.Wrap
-            text: qsTr("The transcript starts over, and so does the agent. This meeting stays saved in %1.").arg(engine.meetingPath)
+            text: qsTr("The current meeting is kept as it is, and the new one starts listening.")
         }
         standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: engine.newMeeting()
+        onAccepted: engine.startMeeting()
     }
 
     Dialog {
@@ -220,7 +115,7 @@ ApplicationWindow {
         Label {
             width: quitDialog.availableWidth
             wrapMode: Text.Wrap
-            text: qsTr("The transcript is saved; open Sidecar again to pick it back up.")
+            text: qsTr("The meeting is paused, not ended: open Sidecar again and Space carries on with it.")
         }
         standardButtons: Dialog.Ok | Dialog.Cancel
         onAccepted: Qt.quit()
@@ -228,9 +123,16 @@ ApplicationWindow {
 
     Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.connected; onActivated: engine.toggleListening() }
     Shortcut { sequence: "/"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: agentPane.input.forceActiveFocus() }
+    Shortcut { sequence: "Ctrl+F"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: { win.listHidden = false; topBar.search.forceActiveFocus() } }
     Shortcut { sequence: "?"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: keys.open() }
-    Shortcut { sequence: "End"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: transcriptPane.toLive() }
-    Shortcut { sequence: "Ctrl+N"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: newMeetingDialog.open() }
+    Shortcut { sequence: "End"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.transcriptPane.toLive() }
+    Shortcut { sequence: "J"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingList.step(1) }
+    Shortcut { sequence: "K"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingList.step(-1) }
+    Shortcut { sequence: "G"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: engine.select(engine.current) }
+    Shortcut { sequence: "\\"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.listHidden = !win.listHidden }
+    Shortcut { sequence: "R"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.rename() }
+    Shortcut { sequence: "E"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: { engine.select(engine.current); meetingPane.confirmEnd() } }
+    Shortcut { sequence: "Ctrl+N"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: win.newMeeting() }
     Shortcut { sequence: "Ctrl+Shift+K"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen && !agent.running; onActivated: agent.forget() }
     Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.running; onActivated: agent.stop() }
     Shortcut { sequence: "Y"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.approvals.length > 0; onActivated: agent.decide(agent.approvals[0].id, "once") }

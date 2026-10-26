@@ -7,9 +7,11 @@ Rectangle {
     id: button
     property string text
     property bool primary: false
+    // The key that does the same, shown in the button.
+    property string keys: ""
     signal clicked()
 
-    implicitWidth: label.implicitWidth + 28
+    implicitWidth: content.implicitWidth + 28
     implicitHeight: 36
     radius: Math.min(4, theme.radius)
     color: primary ? (mouse.containsMouse ? Qt.lighter(theme.accent, 1.12) : theme.accent)
@@ -17,19 +19,30 @@ Rectangle {
     border.color: primary ? "transparent" : ui.line
     opacity: enabled ? 1 : 0.5
 
-    Text {
-        id: label
+    Row {
+        id: content
         anchors.centerIn: parent
-        text: button.text
-        color: button.primary ? theme.accentForeground : ui.text
-        font.pixelSize: 13
-        font.bold: button.primary
+        spacing: 9
+        Text {
+            id: label
+            anchors.verticalCenter: parent.verticalCenter
+            text: button.text
+            color: button.primary ? theme.accentForeground : ui.text
+            font.pixelSize: 13
+            font.bold: button.primary
+        }
+        KeyCap {
+            visible: button.keys !== ""
+            anchors.verticalCenter: parent.verticalCenter
+            text: button.keys
+            tone: button.primary ? theme.accentForeground : ui.faint
+        }
     }
     MouseArea {
         id: mouse
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: button.clicked()
+        onClicked: if (button.enabled) button.clicked()
     }
 }

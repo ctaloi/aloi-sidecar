@@ -4,7 +4,7 @@ A live transcript of the meeting you're in, and an agent beside it that you
 can ask about the call while it's going on, with every skill you have in
 Claude Code.
 
-![Sidecar during a call, answering a question](docs/answer-1280x820.png)
+![Sidecar during a call, answering a question](docs/answer-1440x900.png)
 
 - **Hears both sides.** Your mic is "Me"; every speaker output (laptop,
   each display) is "Them", so it doesn't matter where the call's audio goes
@@ -17,10 +17,15 @@ Claude Code.
   something I haven't answered?", or "look up their numbers": the agent
   gets the lines said since your last question and can use your skills
   (Vaspian One, Silhouette, mail and calendar, Notion, Telescope…).
-- **Meetings are kept.** Each meeting is a JSON Lines file in
-  `~/.local/share/aloi-sidecar/meetings/`. Listening again within 15
-  minutes of the last line carries on the same meeting; Ctrl+N starts a new
-  one.
+- **Every meeting has edges.** It starts when you listen (Space) or start
+  one (Ctrl+N), pauses with Space, and ends with E. Nothing is merged into a
+  meeting by time. Each is a folder in `~/.local/share/aloi-sidecar/meetings/`
+  (`meta.json` and `transcript.jsonl`); a meeting nobody spoke in leaves
+  nothing behind.
+- **Go back to any meeting.** The list on the left has every meeting, live
+  first, then today, yesterday, this week and earlier. Open one to read it
+  and ask about it: each meeting has its own conversation with the agent,
+  which sees that meeting's transcript and no other.
 
 ## Nothing changes by itself
 
@@ -47,15 +52,21 @@ The agent runs like Aloi Tix's: `claude -p` in
 
 | Key | Action |
 |-----|--------|
-| `Space` | Start / stop listening |
-| `/` | Ask about the call |
+| `Space` | Listen / pause (starts a meeting if none is on) |
+| `E` | End the meeting |
+| `Ctrl+N` | Start a new meeting |
+| `R` | Rename the meeting on screen |
+| `J` / `K` | Next / previous meeting |
+| `G` | Go to the meeting that's on now |
+| `\` | Show / hide the meetings list |
+| `Ctrl+F` | Search meetings |
+| `/` | Ask about the meeting on screen |
 | `1`–`4` | Ask a suggested question |
 | `Esc` | Stop the agent, leave the ask box |
 | `Y` / `N` | Allow / deny what the agent wants to run |
 | `End` | Back to the live end of the transcript |
-| `Ctrl+N` | Start a new meeting |
-| `Ctrl+Shift+K` | Clear the conversation with the agent |
-| `Q` | Quit (stops listening) |
+| `Ctrl+Shift+K` | New chat with the agent |
+| `Q` | Quit (pauses listening) |
 
 `aloi-sidecar --ask` brings Sidecar forward with the cursor in the ask box
 (for a Hyprland binding); `--toggle` turns listening on or off;
@@ -65,9 +76,11 @@ The agent runs like Aloi Tix's: `claude -p` in
 
 - `engine/` is the ear: a Python service (`aloi-sidecar-engine`, a systemd
   user unit) that captures through PipeWire with `parec`, finds speech with
-  Silero VAD and transcribes with Parakeet. It listens only while asked
-  (`POST /listen`), streams lines, live previews and levels from
-  `GET /events`, and drops your mic's copy of what the speakers played.
+  Silero VAD and transcribes with Parakeet. It keeps the meetings
+  (`GET /meetings`, `GET`/`PATCH /meeting/<id>`, `POST /meeting/start`,
+  `POST /meeting/end`), listens only while asked (`POST /listen`), streams
+  lines, live previews and levels from `GET /events`, and drops your mic's
+  copy of what the speakers played.
   `http://127.0.0.1:8777` is a plain web view with a direct Claude ask box,
   kept as a fallback (it uses the key linked at
   `~/.config/aloi-sidecar/api-key`).

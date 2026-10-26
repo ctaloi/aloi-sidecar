@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
+import "sidecar.js" as Sidecar
 
 // The meeting as it's said: settled lines, then what each side is saying
 // right now in faint italics. It follows the live end until you scroll up,
@@ -26,6 +27,11 @@ Rectangle {
 
         // Stay on the live end as lines arrive, unless Chris scrolled up to read.
         property bool stick: true
+        // Another meeting on screen starts at its live end.
+        Connections {
+            target: engine
+            function onSelectedChanged() { list.stick = true; Qt.callLater(list.positionViewAtEnd) }
+        }
         onMovementEnded: stick = atYEnd
         onCountChanged: if (stick) Qt.callLater(positionViewAtEnd)
         onContentHeightChanged: if (stick && !moving) Qt.callLater(positionViewAtEnd)
@@ -36,6 +42,7 @@ Rectangle {
             required property string speaker
             required property string text
             required property string time
+            required property double start
             required property bool mine
             // A run of lines from the same side shows the name once.
             required property bool runStart
@@ -48,7 +55,8 @@ Rectangle {
                 x: 18
                 y: body.y + 2
                 width: 64
-                text: row.time
+                // The same clock as the meetings list, to the second.
+                text: Sidecar.seconds(row.start)
                 color: ui.faint
                 font.pixelSize: 11
             }
@@ -131,8 +139,11 @@ Rectangle {
             color: ui.muted
             font.pixelSize: 15
             text: !engine.connected ? qsTr("Waiting for the engine…")
+                : engine.loading ? qsTr("Opening the meeting…")
+                : engine.selected === "" ? qsTr("No meeting on.")
+                : engine.selected !== engine.current ? qsTr("Nobody spoke in this one.")
                 : engine.listening ? qsTr("Listening. Lines show up here as people talk.")
-                : qsTr("Not listening.")
+                : qsTr("Paused.")
         }
         Text {
             width: parent.width
@@ -140,7 +151,8 @@ Rectangle {
             wrapMode: Text.Wrap
             color: ui.faint
             font.pixelSize: 12
-            visible: engine.connected && !engine.listening
+            visible: engine.connected && !engine.listening && !engine.loading
+                     && (engine.selected === "" || engine.selected === engine.current)
             text: qsTr("Space starts listening to your mic and every speaker.")
         }
     }

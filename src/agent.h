@@ -52,7 +52,9 @@ public:
     static QString skillOf(const QString &command);
     void setApprover(const QString &program) { m_approver = program; }
 
-    Q_INVOKABLE void setMeeting(const QString &meeting);
+    // The meeting on screen, and a line about it for the agent ("Meeting with
+    // Cadle", when, whether it's live or over).
+    Q_INVOKABLE void setMeeting(const QString &meeting, const QString &about = {});
     Q_INVOKABLE void ask(const QString &question);
     Q_INVOKABLE void stop();
     // Start this meeting's conversation over.
@@ -61,6 +63,8 @@ public:
     // What goes to Claude for a question: the new lines, then the question.
     QString prompt(const QString &question, bool firstOfSession) const;
     static QString systemPrompt();
+    // The line about a meeting the agent gets first: title, when, live or over.
+    static QString describe(const QVariantMap &meeting);
     QStringList allowedTools() const;
     // The folder the agent runs in, with Chris's skills linked in.
     QString workspace() const;
@@ -107,6 +111,7 @@ private:
     QString m_approver;
     QList<Pending> m_pending;
     QString m_meeting;
+    QString m_about;
     QString m_busyMeeting;
     QHash<QString, Session> m_sessions;
     QString m_error;

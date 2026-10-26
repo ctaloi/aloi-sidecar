@@ -11,7 +11,7 @@ PORT=$((20000 + $$ % 20000))
 "$ROOT/engine/.venv/bin/python" "$ROOT/tests/fake/engine.py" "$PORT" &
 FAKE=$!
 trap 'kill $FAKE 2>/dev/null' EXIT
-i=0; until curl -s -o /dev/null -X POST "http://127.0.0.1:$PORT/meeting/new" || [ $i -gt 30 ]; do i=$((i+1)); sleep 0.2; done
+i=0; until curl -s -o /dev/null -X POST "http://127.0.0.1:$PORT/meeting/end" || [ $i -gt 30 ]; do i=$((i+1)); sleep 0.2; done
 
 cd "$ROOT"
 SIDECAR_ENGINE="http://127.0.0.1:$PORT" SIDECAR_CLAUDE="$ROOT/tests/fake/claude" \

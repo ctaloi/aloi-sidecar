@@ -31,7 +31,7 @@ MODELS = Path.home() / ".local/share/aloi-sidecar/models"
 PARAKEET = MODELS / "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
 MEETINGS = Path(os.environ.get("SIDECAR_MEETINGS", Path.home() / ".local/share/aloi-sidecar/meetings"))
 KEY_FILE = Path.home() / ".config/aloi-sidecar/api-key"  # optional; else SDK defaults (ANTHROPIC_API_KEY etc.)
-RESUME_WINDOW = 15 * 60  # listening again within this long of the last line continues the same meeting
+RECOVER_WINDOW = 2 * 60 * 60  # a meeting left live by a crash comes back paused if its last line is this recent
 ME = "Chris"
 
 INTERIM_EVERY = 1.5  # seconds between live-preview decodes
@@ -86,69 +86,189 @@ def similar(a, b):
     return difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio() > ECHO_RATIO
 
 
+class Meeting:
+    """One meeting: a folder with meta.json and transcript.jsonl. It has edges:
+    it starts (by hand or for a calendar event), it can pause, and it ends.
+    Nothing is ever merged into a meeting by time alone."""
+
+    def __init__(self, folder, meta, segments=None):
+        self.folder = Path(folder)
+        self.meta = meta
+        self._segments = segments
+        self.log = None
+
+    @classmethod
+    def create(cls, title, event=None):
+        now = time.time()
+        mid = datetime.fromtimestamp(now).strftime("%Y-%m-%d_%H%M%S")
+        folder = MEETINGS / mid
+        n = 2
+        while folder.exists():  # two starts in one second
+            folder = MEETINGS / f"{mid}-{n}"
+            n += 1
+        meta = {"id": folder.name, "title": title, "started": now, "ended": None, "state": "live",
+                "event": event, "people": [], "notion": None}
+        m = cls(folder, meta, [])
+        return m
+
+    @classmethod
+    def load(cls, folder):
+        meta = json.loads((folder / "meta.json").read_text())
+        return cls(folder, meta)
+
+    @property
+    def id(self):
+        return self.meta["id"]
+
+    @property
+    def segments(self):
+        if self._segments is None:
+            path = self.folder / "transcript.jsonl"
+            self._segments = []
+            if path.exists():
+                with path.open() as f:
+                    self._segments = [json.loads(line) for line in f if line.strip()]
+        return self._segments
+
+    def lines(self):
+        if self._segments is not None:
+            return len(self._segments)
+        path = self.folder / "transcript.jsonl"
+        if not path.exists():
+            return 0
+        with path.open("rb") as f:
+            return sum(1 for _ in f)
+
+    def last_line_end(self):
+        segs = self.segments
+        return segs[-1]["end"] if segs else self.meta["started"]
+
+    def summary(self):
+        return {**self.meta, "lines": self.lines()}
+
+    def save(self):
+        # Written beside and renamed over, so a crash never leaves half a file.
+        # The folder is made with the first line or the first edit, so a meeting
+        # nobody spoke in leaves nothing behind.
+        self.folder.mkdir(parents=True, exist_ok=True)
+        tmp = self.folder / "meta.json.tmp"
+        tmp.write_text(json.dumps(self.meta, indent=1))
+        tmp.replace(self.folder / "meta.json")
+
+    def append(self, seg):
+        seg["id"] = len(self.segments)
+        self.segments.append(seg)
+        if not self.log:
+            self.save()
+            self.log = (self.folder / "transcript.jsonl").open("a")
+        self.log.write(json.dumps(seg) + "\n")
+        self.log.flush()
+        return seg
+
+    def close(self):
+        if self.log:
+            self.log.close()
+            self.log = None
+
+
+def ad_hoc_title(t=None):
+    return "Call at " + datetime.fromtimestamp(t or time.time()).strftime("%-H:%M")
+
+
 class Sidecar:
     def __init__(self):
         self.recognizer = make_recognizer()
         self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)  # one recognizer, one decoder thread
-        self.segments = []  # committed, append-only
         self.pending_me = []  # held briefly so speaker echo of "Them" can be dropped
         self.clients = set()
         self.channels = []
         self.tasks = []
         self.listening = False
-        self.log = None
-        self.path = None
+        self.current = None  # the meeting that's live or paused, if any
         MEETINGS.mkdir(parents=True, exist_ok=True)
+        self.meetings = {}
+        for meta in sorted(MEETINGS.glob("*/meta.json")):
+            m = Meeting.load(meta.parent)
+            self.meetings[m.id] = m
+        self.recover()
         self.ask_blocks = []  # frozen transcript blocks already sent to Claude
         self.ask_sent = 0  # number of segments covered by ask_blocks
         if KEY_FILE.exists():
             self.client = anthropic.AsyncAnthropic(api_key=KEY_FILE.read_text().strip())
         else:
             self.client = anthropic.AsyncAnthropic()
-        self.resume_or_new(force_new=False)
+
+    def recover(self):
+        """A meeting left live by a crash or a reboot comes back paused if it
+        was recent, and is ended (at its last line) if it wasn't."""
+        for m in self.meetings.values():
+            if m.meta["state"] == "ended":
+                continue
+            if self.current is None and time.time() - m.last_line_end() < RECOVER_WINDOW:
+                m.meta["state"] = "paused"
+                self.current = m
+            else:
+                m.meta["state"] = "ended"
+                m.meta["ended"] = m.last_line_end()
+            m.save()
 
     # ---- meetings ----
 
-    def resume_or_new(self, force_new):
-        """Continue the latest meeting if it had a line recently, else start a new one."""
-        logs = sorted(MEETINGS.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
-        path = None
-        if not force_new and logs and time.time() - logs[-1].stat().st_mtime < RESUME_WINDOW:
-            path = logs[-1]
-        if path and path == self.path:
-            return
-        if not path and self.path and not self.path.exists() and not force_new:
-            return  # a new meeting nobody has spoken in yet: keep it
-        if self.log:
-            self.log.close()
-            self.log = None
-        self.ask_blocks, self.ask_sent, self.pending_me = [], 0, []
-        if path:
-            with path.open() as f:
-                self.segments = [json.loads(line) for line in f if line.strip()]
-        else:
-            # The file is made with the first line, so starting the service
-            # (at every login) doesn't leave empty meetings behind.
-            path = MEETINGS / f"{datetime.now():%Y-%m-%d_%H%M%S}.jsonl"
-            self.segments = []
-        self.path = path
-        self.broadcast({"type": "meeting", **self.meeting_info()})
-        for s in self.segments:
-            self.broadcast(self.segment_event(s))
+    def listing(self):
+        return sorted((m.summary() for m in self.meetings.values()), key=lambda s: s["started"], reverse=True)
 
-    def meeting_info(self):
-        return {"meeting": self.path.stem, "path": str(self.path), "lines": len(self.segments)}
+    def announce(self, m):
+        self.broadcast({"type": "meeting", "meeting": m.summary()})
 
     def state(self):
         return {"type": "state", "listening": self.listening,
+                "current": self.current.id if self.current else None,
                 "channels": [{"label": c.label, "speaker": c.speaker} for c in self.channels]}
 
+    async def start_meeting(self, title=None, event=None):
+        await self.end_meeting()
+        m = Meeting.create(title or (event or {}).get("subject") or ad_hoc_title(), event)
+        self.meetings[m.id] = m
+        self.current = m
+        self.ask_blocks, self.ask_sent = [], 0
+        self.announce(m)
+        await self.set_listening(True)
+        return m
+
+    async def end_meeting(self):
+        if not self.current:
+            return None
+        await self.set_listening(False)
+        m, self.current = self.current, None
+        m.meta["state"] = "ended"
+        m.meta["ended"] = time.time()
+        m.close()
+        if m.lines() or (m.folder / "meta.json").exists():
+            m.save()
+        else:
+            del self.meetings[m.id]  # nobody spoke: it never happened
+            self.broadcast({"type": "meeting_removed", "id": m.id})
+            self.broadcast(self.state())
+            return None
+        self.announce(m)
+        self.broadcast(self.state())
+        return m
+
+    def update_meeting(self, m, changes):
+        for key in ("title", "people", "notion"):
+            if key in changes:
+                m.meta[key] = changes[key]
+        m.save()
+        self.announce(m)
+
     async def set_listening(self, on):
+        if on and not self.current:
+            await self.start_meeting()  # listening always belongs to a meeting
+            return
         if on == self.listening:
             return
         self.listening = on
         if on:
-            self.resume_or_new(force_new=False)
             # Outputs are found afresh each time, so a display plugged in since
             # the last call is heard too.
             self.channels = [Channel(self, ME, "@DEFAULT_SOURCE@", "Mic")]
@@ -156,6 +276,7 @@ class Sidecar:
             for sink in sinks():
                 self.channels.append(Channel(self, "Them", sink + ".monitor", label_for(sink, displays)))
             self.tasks = [asyncio.create_task(c.run()) for c in self.channels]
+            self.current.meta["state"] = "live"
         else:
             for t in self.tasks:
                 t.cancel()
@@ -164,6 +285,12 @@ class Sidecar:
             for m in self.pending_me:
                 self.commit(m)
             self.pending_me = []
+            if self.current:
+                self.current.meta["state"] = "paused"
+        if self.current:
+            if (self.current.folder / "meta.json").exists():
+                self.current.save()
+            self.announce(self.current)
         self.broadcast(self.state())
 
     # ---- transcript ----
@@ -180,8 +307,8 @@ class Sidecar:
             if q.qsize() < 1000:
                 q.put_nowait(data)
 
-    def segment_event(self, seg):
-        return {"type": "segment", **seg, "time": stamp(seg["start"])}
+    def segment_event(self, seg, meeting):
+        return {"type": "segment", **seg, "meeting": meeting, "time": stamp(seg["start"])}
 
     def them_speaking(self):
         return any(c.speaking for c in self.channels if c.speaker != ME)
@@ -191,7 +318,7 @@ class Sidecar:
         if speaker == ME:
             # Speakers bleeding into the mic: the "Them" line may already be in,
             # or may still be decoding, so check now and again until the hold ends.
-            recent = [s for s in self.segments[-8:] if s["speaker"] != ME]
+            recent = [s for s in (self.current.segments[-8:] if self.current else []) if s["speaker"] != ME]
             if any(overlaps(seg, s) and similar(seg["text"], s["text"]) for s in recent):
                 self.broadcast({"type": "echo_dropped", "text": text})
                 return
@@ -205,14 +332,10 @@ class Sidecar:
                     self.broadcast({"type": "echo_dropped", "text": m["text"]})
 
     def commit(self, seg):
-        seg = {k: v for k, v in seg.items() if k != "hold_until"}
-        seg["id"] = len(self.segments)
-        self.segments.append(seg)
-        if not self.log:
-            self.log = self.path.open("a")
-        self.log.write(json.dumps(seg) + "\n")
-        self.log.flush()
-        self.broadcast(self.segment_event(seg))
+        if not self.current:
+            return
+        seg = self.current.append({k: v for k, v in seg.items() if k != "hold_until"})
+        self.broadcast(self.segment_event(seg, self.current.id))
 
     async def flush_pending(self):
         while True:
@@ -236,10 +359,11 @@ class Sidecar:
     async def ask(self, question):
         # Everything new since the last question becomes one frozen block, so the
         # prefix Claude saw last time is byte-identical and served from cache.
-        new = self.segments[self.ask_sent:]
+        segments = self.current.segments if self.current else []
+        new = segments[self.ask_sent:]
         if new:
             self.ask_blocks.append({"type": "text", "text": self.transcript_text(new)})
-            self.ask_sent = len(self.segments)
+            self.ask_sent = len(segments)
         if not self.ask_blocks:
             yield {"type": "answer_delta", "text": "Nothing has been transcribed yet."}
             return
@@ -370,9 +494,11 @@ async def events(request):
     resp = web.StreamResponse(headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache"})
     await resp.prepare(request)
     q = asyncio.Queue()
-    # Everything so far, then live: a client that reconnects starts from a clean slate.
-    hello = [{"type": "meeting", **app.meeting_info()}, app.state()]
-    hello += [app.segment_event(s) for s in app.segments]
+    # Every meeting, the state, then the live meeting's lines: a client that
+    # reconnects starts from a clean slate.
+    hello = [{"type": "meetings", "meetings": app.listing()}, app.state()]
+    if app.current:
+        hello += [app.segment_event(s, app.current.id) for s in app.current.segments]
     app.clients.add(q)
     try:
         for m in hello:
@@ -390,22 +516,56 @@ async def events(request):
     return resp
 
 
+async def body(request):
+    try:
+        return await request.json() if request.can_read_body else {}
+    except json.JSONDecodeError:
+        return {}
+
+
 async def status(request):
     app = request.app["sidecar"]
-    return web.json_response({**app.state(), **app.meeting_info()})
+    return web.json_response({**app.state(), "meeting": app.current.summary() if app.current else None})
 
 
 async def listen(request):
     app = request.app["sidecar"]
-    body = await request.json() if request.can_read_body else {}
-    await app.set_listening(bool(body.get("on", not app.listening)))
+    await app.set_listening(bool((await body(request)).get("on", not app.listening)))
     return web.json_response(app.state())
 
 
-async def new_meeting(request):
+async def meetings(request):
+    return web.json_response(request.app["sidecar"].listing())
+
+
+def find(request):
+    m = request.app["sidecar"].meetings.get(request.match_info["id"])
+    if not m:
+        raise web.HTTPNotFound(text="No such meeting.")
+    return m
+
+
+async def meeting(request):
+    m = find(request)
+    return web.json_response({"meeting": m.summary(), "segments": m.segments})
+
+
+async def update(request):
+    m = find(request)
+    request.app["sidecar"].update_meeting(m, await body(request))
+    return web.json_response(m.summary())
+
+
+async def start(request):
     app = request.app["sidecar"]
-    app.resume_or_new(force_new=True)
-    return web.json_response(app.meeting_info())
+    b = await body(request)
+    m = await app.start_meeting(b.get("title"), b.get("event"))
+    return web.json_response(m.summary())
+
+
+async def end(request):
+    m = await request.app["sidecar"].end_meeting()
+    return web.json_response(m.summary() if m else None)
 
 
 async def ask(request):
@@ -434,7 +594,11 @@ async def main():
     app.router.add_get("/events", events)
     app.router.add_get("/status", status)
     app.router.add_post("/listen", listen)
-    app.router.add_post("/meeting/new", new_meeting)
+    app.router.add_get("/meetings", meetings)
+    app.router.add_get("/meeting/{id}", meeting)
+    app.router.add_patch("/meeting/{id}", update)
+    app.router.add_post("/meeting/start", start)
+    app.router.add_post("/meeting/end", end)
     app.router.add_post("/ask", ask)
     runner = web.AppRunner(app)
     await runner.setup()

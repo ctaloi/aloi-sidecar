@@ -20,16 +20,42 @@ LINES = [
     ("Chris", "Sure, I'll get that to you today."),
     ("Them", "One more thing, does the auto attendant need to change for the holiday hours?"),
 ]
+NOW = time.time()
+PAST = [
+    ("Weekly operations", 3 * 3600, 34 * 60, [("Them", "Porting queue is down to six. The two stuck ones are waiting on the losing carrier."),
+                                             ("Chris", "Okay. I'll chase the Lumen one myself this afternoon."),
+                                             ("Them", "And the new softphone build goes to beta on Thursday.")]),
+    ("Harbor Logistics, porting review", 26 * 3600, 22 * 60, [("Them", "We have four numbers left to port, all on the old carrier."),
+                                                             ("Chris", "I'll send the LOA over today.")]),
+    ("Call at 9:12", 4 * 86400, 8 * 60, [("Them", "Just checking whether the invoice went out."),
+                                         ("Chris", "It did, Friday. I'll forward it again.")]),
+]
+current_id = "2026-10-26_093000"
 state = {"listening": True}
 clients = set()
 
 
+def meta(mid, title, started, ended, st, lines, event=None):
+    return {"id": mid, "title": title, "started": started, "ended": ended, "state": st, "event": event,
+            "people": [], "notion": None, "lines": lines}
+
+
+def segs(lines, t0, gap=40):
+    return [{"id": i, "speaker": who, "start": t0 + i * gap, "end": t0 + i * gap + 6, "text": text}
+            for i, (who, text) in enumerate(lines)]
+
+
+def meetings():
+    out = [meta(current_id, "Northwind Dental, office cutover", NOW - 600, None,
+                "live" if state["listening"] else "paused", len(LINES), {"id": "x", "subject": "Northwind Dental, office cutover"})]
+    for i, (title, ago, length, lines) in enumerate(PAST):
+        out.append(meta(f"past-{i}", title, NOW - ago, NOW - ago + length, "ended", len(lines)))
+    return out
+
+
 def segments():
-    t0 = time.time() - 600
-    for i, (who, text) in enumerate(LINES):
-        start = t0 + i * 40
-        yield {"type": "segment", "id": i, "speaker": who, "start": start, "end": start + 6, "text": text,
-               "time": time.strftime("%H:%M:%S", time.localtime(start))}
+    for s in segs(LINES, NOW - 600):
+        yield {"type": "segment", "meeting": current_id, **s, "time": time.strftime("%H:%M:%S", time.localtime(s["start"]))}
 
 
 def channels():
@@ -38,13 +64,16 @@ def channels():
             {"label": "Display A", "speaker": "Them", "level": 0.0, "alive": True, "speaking": False}]
 
 
+def state_event():
+    return {"type": "state", "listening": state["listening"], "current": current_id, "channels": []}
+
+
 async def events(request):
     resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
     await resp.prepare(request)
     q = asyncio.Queue()
     clients.add(q)
-    hello = [{"type": "meeting", "meeting": "2026-10-26_093000", "path": "/tmp/2026-10-26_093000.jsonl", "lines": len(LINES)},
-             {"type": "state", "listening": state["listening"], "channels": []}, *segments(),
+    hello = [{"type": "meetings", "meetings": meetings()}, state_event(), *segments(),
              {"type": "interim", "label": "Laptop", "speaker": "Them", "text": "Right now it plays the regular greeting all day, so we'd want"}]
     try:
         for m in hello:
@@ -63,20 +92,35 @@ async def events(request):
     return resp
 
 
+async def meeting(request):
+    mid = request.match_info["id"]
+    for m in meetings():
+        if m["id"] == mid:
+            if mid == current_id:
+                return web.json_response({"meeting": m, "segments": segs(LINES, NOW - 600)})
+            i = int(mid.split("-")[1])
+            return web.json_response({"meeting": m, "segments": segs(PAST[i][3], m["started"])})
+    raise web.HTTPNotFound()
+
+
 async def listen(request):
     body = await request.json()
     state["listening"] = bool(body.get("on"))
     for q in clients:
-        q.put_nowait({"type": "state", "listening": state["listening"], "channels": []})
+        q.put_nowait({"type": "meeting", "meeting": meetings()[0]})
+        q.put_nowait(state_event())
     return web.json_response(state)
 
 
-async def new_meeting(request):
+async def ok(request):
     return web.json_response({})
 
 
 app = web.Application()
 app.router.add_get("/events", events)
+app.router.add_get("/meeting/{id}", meeting)
 app.router.add_post("/listen", listen)
-app.router.add_post("/meeting/new", new_meeting)
+app.router.add_post("/meeting/start", ok)
+app.router.add_post("/meeting/end", ok)
+app.router.add_patch("/meeting/{id}", ok)
 web.run_app(app, host="127.0.0.1", port=PORT, print=None)
