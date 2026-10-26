@@ -28,15 +28,31 @@ Rectangle {
     readonly property string seedKey: (m.id || "") + "|" + (w.drafted || "") + "|" + (hasDoc ? "doc" : "")
     onSeedKeyChanged: seed()
     Component.onCompleted: seed()
+    // Whose doc this is: saves go to that meeting even if another is on
+    // screen by the time they fire, and a pending save is flushed before
+    // another meeting's doc comes in.
+    property string docFor: ""
+    property bool seeding: false
     function seed() {
         if (seedKey === seededFor) return
+        flush()
         seededFor = seedKey
+        seeding = true
+        docFor = m.id || ""
         doc = hasDoc ? JSON.parse(JSON.stringify(w.edited || w.draft)) : null
+        seeding = false
+    }
+    function flush() {
+        if (save.running) { save.stop(); if (docFor && doc) engine.saveWrapup(docFor, doc) }
     }
     function revert() {
+        save.stop()
         engine.saveWrapup(m.id, {})
+        seeding = true
         doc = w.draft ? JSON.parse(JSON.stringify(w.draft)) : null
+        seeding = false
     }
+    Component.onDestruction: flush()
     // Text typed into a field changes the document in place (no rebuild, so
     // the cursor stays put); adding, removing or ticking rebuilds the lists.
     function touched() { saved.running = false; save.restart() }
@@ -44,7 +60,7 @@ Rectangle {
     Timer {
         id: save
         interval: 700
-        onTriggered: { engine.saveWrapup(root.m.id, root.doc); saved.restart() }
+        onTriggered: { if (root.docFor && root.doc) engine.saveWrapup(root.docFor, root.doc); saved.restart() }
     }
     Timer { id: saved; interval: 1600 }
 
@@ -531,7 +547,7 @@ Rectangle {
             selectByMouse: true
             selectionColor: ui.alpha(theme.accent, 0.35)
             selectedTextColor: ui.text
-            onTextChanged: if (activeFocus) field.edited(text)
+            onTextChanged: if (activeFocus && !root.seeding) field.edited(text)
             Keys.onReturnPressed: event => { if (field.multiline && !(event.modifiers & Qt.ControlModifier)) event.accepted = false; else edit.focus = false }
             Keys.onEnterPressed: event => { if (field.multiline && !(event.modifiers & Qt.ControlModifier)) event.accepted = false; else edit.focus = false }
             Keys.onEscapePressed: edit.focus = false

@@ -61,7 +61,13 @@ ApplicationWindow {
         switch (what) {
         case "listen":
             if (id === engine.current) engine.toggleListening()
-            else engine.resume(id)
+            else if (engine.current === "") engine.resume(id)
+            else confirm.ask({
+                title: qsTr("Carry on with “%1”?").arg(m.title),
+                detail: qsTr("“%1” is on now. It ends, and listening carries on in this meeting instead.").arg(engine.meetingById(engine.current).title || ""),
+                confirm: qsTr("Carry on with this one"),
+                run: () => engine.resume(id)
+            })
             break
         case "end":
             engine.select(id)

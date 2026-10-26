@@ -99,7 +99,8 @@ Rectangle {
                 TapHandler { onTapped: engine.select(row.m.id) }
                 TapHandler {
                     acceptedButtons: Qt.RightButton
-                    onTapped: (point) => menu.show(row.m, row, point.position.x, point.position.y)
+                    // The row comes on screen first, so the menu's keys act on it too.
+                    onTapped: (point) => { engine.select(row.m.id); menu.show(row.m, row, point.position.x, point.position.y) }
                 }
 
                 ColumnLayout {

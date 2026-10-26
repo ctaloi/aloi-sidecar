@@ -310,15 +310,26 @@ class Sidecar:
                                     [("default", "Listen"), ("ignore", "Not now")])
         if choice == "default" and not self.listening:
             await self.start_meeting()
+            # Listening always shows: the window opens (or comes forward) with
+            # its pulsing pill, so nothing is ever heard with Sidecar out of sight.
+            try:
+                await asyncio.create_subprocess_exec("gtk-launch", "aloi-sidecar", stdout=asyncio.subprocess.DEVNULL,
+                                                     stderr=asyncio.subprocess.DEVNULL)
+            except FileNotFoundError:
+                pass
 
     async def ask_to_end(self, m, app):
-        heard = m.lines()
+        heard, asked = m.lines(), time.time()
         choice = await calls.notify(f"Sounds like the {app} call ended",
                                     f"End “{m.meta['title']}”? It ends by itself in two minutes if nothing more is said.",
                                     [("default", "End meeting"), ("keep", "Keep listening")], timeout=END_AFTER)
-        if self.current is not m or self.call:
-            return  # something else happened meanwhile: another call, or it ended already
-        if choice == "default" or (choice is None and m.lines() == heard):
+        if choice == "keep":
+            return
+        if choice is None:  # dismissed or timed out: the two minutes still run their course
+            await asyncio.sleep(max(0, END_AFTER - (time.time() - asked)))
+        if self.current is not m or self.call or not self.listening:
+            return  # something else happened meanwhile: another call, a pause, or it ended already
+        if choice == "default" or m.lines() == heard:
             await self.end_meeting()
 
     async def start_meeting(self, title=None, event=None):
@@ -819,7 +830,11 @@ async def markdown(request):
 async def candidates(request):
     app = request.app["sidecar"]
     try:
-        return web.json_response({"pages": await app.notion.candidates(find(request).meta)})
+        pages = await app.notion.candidates(find(request).meta)
+        # Pages Sidecar made for its other meetings aren't this one's.
+        ours = {(m.meta.get("notion") or {}).get("id", "").replace("-", "") for m in app.meetings.values()}
+        pages = [p for p in pages if p["id"].replace("-", "") not in ours]
+        return web.json_response({"pages": pages})
     except NotionError as e:
         return web.json_response({"error": str(e)}, status=502)
 

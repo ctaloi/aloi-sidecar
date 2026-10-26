@@ -141,6 +141,7 @@ def main():
         wait("draft 2", lambda: _ready(base, other))
         _, cands = call(base, "GET", f"/meeting/{other}/notion")
         check("candidates include the seeded page", any(p["id"] == seeded["id"] for p in cands["pages"]), cands)
+        check("candidates leave out Sidecar's own pages", all(p["id"] != pid for p in cands["pages"]), cands)
         call(base, "POST", f"/meeting/{other}/notion", {"target": seeded["id"]})
         m = wait("filled", lambda: _notion(base, other, "sent"))
         _, log = call(fake, "GET", "/_log")
