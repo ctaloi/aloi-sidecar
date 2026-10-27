@@ -11,6 +11,7 @@ Rectangle {
     color: ui.panel
 
     property alias input: field
+    signal collapse()
     readonly property bool over: engine.selectedMeeting.state === "ended"
     // During a call: catching up. Afterwards: what to take away from it.
     readonly property var chips: over ? [
@@ -64,6 +65,13 @@ Rectangle {
                 text: qsTr("New chat")
                 implicitHeight: 30
                 onClicked: agent.forget()
+            }
+            ActionButton {
+                text: "›"
+                tip: qsTr("Hide the agent (A)")
+                implicitHeight: 30
+                implicitWidth: 30
+                onClicked: pane.collapse()
             }
         }
         Rectangle { Layout.fillWidth: true; height: 1; color: ui.line }

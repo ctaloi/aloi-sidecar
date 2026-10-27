@@ -1,4 +1,5 @@
 import QtQuick
+import QtCore
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
@@ -49,6 +50,18 @@ ApplicationWindow {
     // The list folds away by hand (\), or by itself when there isn't room for three columns.
     property bool listHidden: false
     readonly property bool listShown: !listHidden && width >= 1100
+    // The agent folds to a strip at the right (A), and stays that way next time.
+    property bool agentHidden: false
+    function showAgent() { agentHidden = false }
+    Settings {
+        location: StandardPaths.writableLocation(StandardPaths.ConfigLocation) + "/aloi-sidecar/ui.conf"
+        property alias agentHidden: win.agentHidden
+    }
+    // Something waiting for an Allow can't wait behind a folded panel.
+    Connections {
+        target: agent
+        function onApprovalsChanged() { if (agent.approvals.length > 0) win.showAgent() }
+    }
 
     // M: flag the moment in the meeting that's on.
     function markNow() {
@@ -172,7 +185,7 @@ ApplicationWindow {
         function onOpenRequested(action) {
             win.raise()
             win.requestActivate()
-            if (action === "ask") agentPane.input.forceActiveFocus()
+            if (action === "ask") { win.showAgent(); agentPane.input.forceActiveFocus() }
             else if (action === "toggle") engine.toggleListening()
         }
     }
@@ -216,9 +229,16 @@ ApplicationWindow {
         }
         AgentPane {
             id: agentPane
+            visible: !win.agentHidden
+            onCollapse: win.agentHidden = true
             // A third of a wide window; in a narrow tile it shares the room.
             Layout.preferredWidth: win.width < 960 ? win.width * 0.44 : Math.max(360, Math.min(440, win.width * 0.3))
             Layout.fillHeight: true
+        }
+        AgentRail {
+            visible: win.agentHidden
+            Layout.fillHeight: true
+            onOpen: win.showAgent()
         }
     }
 
@@ -229,7 +249,8 @@ ApplicationWindow {
     ConfirmOverlay { id: confirm; anchors.fill: parent; z: 45 }
 
     Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.connected; onActivated: engine.toggleListening() }
-    Shortcut { sequence: "/"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: agentPane.input.forceActiveFocus() }
+    Shortcut { sequence: "/"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { win.showAgent(); agentPane.input.forceActiveFocus() } }
+    Shortcut { sequence: "A"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.agentHidden = !win.agentHidden }
     Shortcut { sequence: "Ctrl+F"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: { win.listHidden = false; topBar.search.forceActiveFocus() } }
     Shortcut { sequence: "?"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: keys.open() }
     Shortcut { sequence: "End"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { meetingPane.tab = "transcript"; meetingPane.transcriptPane.toLive() } }
@@ -279,7 +300,7 @@ ApplicationWindow {
                 sequence: String(index + 1)
                 context: Qt.ApplicationShortcut
                 enabled: win.idle && !agent.running
-                onActivated: agentPane.ask(agentPane.chips[index])
+                onActivated: { win.showAgent(); agentPane.ask(agentPane.chips[index]) }
             }
         }
     }

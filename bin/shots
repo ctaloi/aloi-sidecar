@@ -14,5 +14,5 @@ trap 'kill $FAKE 2>/dev/null' EXIT
 i=0; until curl -s -o /dev/null -X POST "http://127.0.0.1:$PORT/meeting/end" || [ $i -gt 30 ]; do i=$((i+1)); sleep 0.2; done
 
 cd "$ROOT"
-SIDECAR_ENGINE="http://127.0.0.1:$PORT" SIDECAR_CLAUDE="$ROOT/tests/fake/claude" \
+XDG_CONFIG_HOME="$ROOT/build/shots/config" SIDECAR_ENGINE="http://127.0.0.1:$PORT" SIDECAR_CLAUDE="$ROOT/tests/fake/claude" \
     QT_FORCE_STDERR_LOGGING=1 "$ROOT/build/shots/shots" "$@"

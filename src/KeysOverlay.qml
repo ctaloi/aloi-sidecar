@@ -37,6 +37,7 @@ Popup {
         ["X", qsTr("No wrap-up needed (or needed after all)")],
         [qsTr("Agent")],
         ["/", qsTr("Ask about the meeting on screen")],
+        ["A", qsTr("Hide or show the agent")],
         ["1 – 4", qsTr("Ask a suggested question")],
         ["Ctrl+A", qsTr("Next question across all meetings (in the ask box)")],
         ["Y / N", qsTr("Allow / deny what the agent wants to run")],

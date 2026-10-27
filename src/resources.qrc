@@ -4,6 +4,7 @@
         <file>Colors.qml</file>
         <file>TranscriptPane.qml</file>
         <file>AgentPane.qml</file>
+        <file>AgentRail.qml</file>
         <file>KeysOverlay.qml</file>
         <file>ActionButton.qml</file>
         <file>TopBar.qml</file>

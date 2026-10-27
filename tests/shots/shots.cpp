@@ -89,6 +89,11 @@ int main(int argc, char *argv[]) {
     wait(800);
     QDir().mkpath(out);
     window->grabWindow().save(out + "/listening-" + size + ".png");
+    window->setProperty("agentHidden", true);
+    wait(300);
+    window->grabWindow().save(out + "/agent-hidden-" + size + ".png");
+    window->setProperty("agentHidden", false);
+    wait(300);
 
     if (approval) {
         agent.ask("Run exactly `curl -sI https://example.com` and tell me the HTTP status line, nothing else.");
