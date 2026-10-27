@@ -19,6 +19,9 @@ Rectangle {
     readonly property string stage: Sidecar.stage(m)
     property alias transcriptPane: transcriptView
     property bool editing: false
+    // The switches sit beside the title while at least a short title still
+    // fits there, and drop under it otherwise.
+    readonly property bool narrow: width - 48 < switches.needed + Math.min(title.implicitWidth, 240) + 14
     // Notes or Transcript, for a meeting that's over. A meeting opens on its
     // notes once it has them, and on its transcript until then.
     property string tab: "notes"
@@ -47,24 +50,22 @@ Rectangle {
 
         CallBanner { Layout.fillWidth: true }
 
-        // What the meeting is.
+        // What the meeting is, on one line with its switches; when and who
+        // on a quiet line under it; then, once it's over, Notes and Transcript.
         ColumnLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: pane.width < 520 ? 18 : 32
-            Layout.rightMargin: pane.width < 520 ? 18 : 32
-            Layout.topMargin: 20
-            spacing: 10
+            Layout.leftMargin: pane.narrow ? 18 : 28
+            Layout.rightMargin: pane.narrow ? 14 : 20
+            Layout.topMargin: 14
+            Layout.bottomMargin: pane.over ? 0 : 12
+            spacing: 6
             visible: pane.has
 
-            Label {
-                text: qsTr("Meetings") + "  ›  " + (pane.isCurrent ? qsTr("Now") : Sidecar.dayLabel(pane.m))
-                color: ui.faint
-                font.pixelSize: 11
-            }
-
-            RowLayout {
+            GridLayout {
                 Layout.fillWidth: true
-                spacing: 12
+                columns: pane.narrow ? 1 : 2
+                columnSpacing: 14
+                rowSpacing: 8
                 Item {
                     Layout.fillWidth: true
                     implicitHeight: Math.max(title.implicitHeight, titleEdit.implicitHeight)
@@ -74,23 +75,21 @@ Rectangle {
                         width: parent.width
                         text: pane.m.title || ""
                         color: ui.text
-                        font.pixelSize: 26
+                        font.pixelSize: 21
                         font.bold: true
-                        wrapMode: Text.Wrap
-                        maximumLineCount: 2
                         elide: Text.ElideRight
                         HoverHandler { id: titleHover; cursorShape: Qt.IBeamCursor }
                         TapHandler { onDoubleTapped: pane.rename() }
                         ToolTip.visible: titleHover.hovered
                         ToolTip.delay: 900
-                        ToolTip.text: qsTr("Double-click or R to rename")
+                        ToolTip.text: title.truncated ? pane.m.title + "\n" + qsTr("Double-click or R to rename") : qsTr("Double-click or R to rename")
                     }
                     TextInput {
                         id: titleEdit
                         visible: pane.editing
                         width: parent.width
                         color: ui.text
-                        font.pixelSize: 26
+                        font.pixelSize: 21
                         font.bold: true
                         selectByMouse: true
                         selectionColor: ui.alpha(theme.accent, 0.4)
@@ -100,112 +99,105 @@ Rectangle {
                         Rectangle { anchors.top: parent.bottom; width: parent.width; height: 1; color: theme.accent }
                     }
                 }
-                ActionButton {
-                    id: moreButton
-                    Layout.alignment: Qt.AlignTop
-                    menu: true
-                    tip: qsTr("Everything for this meeting (right-click it in the list, too)")
-                    onClicked: pane.openMenu()
-                }
-            }
-
-            Flow {
-                Layout.fillWidth: true
-                spacing: 8
-                Chip {
-                    visible: pane.isCurrent
-                    filled: true
-                    tone: pane.live ? ui.live : ui.muted
-                    glyph: "●"
-                    text: pane.live ? qsTr("Live  %1").arg(Sidecar.elapsed(pane.m, pane.now)) : qsTr("Paused")
-                }
-                Chip {
-                    visible: pane.has
-                    tone: ui.muted
-                    text: Sidecar.span(pane.m) + (pane.over ? "  ·  " + Sidecar.length(pane.m, pane.now) : "")
-                }
-                Chip {
-                    visible: pane.has
-                    tone: ui.faint
-                    text: qsTr("%n lines", "", pane.isCurrent ? transcript.count : (pane.m.lines || 0))
-                }
-                // The calendar meeting it is, and who was invited.
-                Chip {
-                    visible: pane.has && !!pane.m.event
-                    tone: ui.muted
-                    glyph: "▦"
-                    text: {
-                        const people = pane.m.people || []
-                        if (people.length === 0) return qsTr("From your calendar")
-                        return people.length === 1 ? qsTr("With %1").arg(people[0])
-                             : qsTr("With %1 +%2").arg(people[0]).arg(people.length - 1)
+                // While it's on: listen/pause, end, mark, note. Afterwards only
+                // Note; rename and copy are a key or the ⋯ away.
+                Flow {
+                    id: switches
+                    spacing: 6
+                    readonly property real needed: {
+                        let w = 0, n = 0
+                        for (const c of children) if (c.visible) { w += c.implicitWidth; n++ }
+                        return w + Math.max(0, n - 1) * spacing
                     }
-                    HoverHandler { id: peopleHover }
-                    ToolTip.visible: peopleHover.hovered && (pane.m.people || []).length > 1
-                    ToolTip.delay: 400
-                    ToolTip.text: (pane.m.people || []).join("\n")
-                }
-                StageChip { stage: pane.stage; m: pane.m }
-                Chip {
-                    visible: pane.isCurrent && engine.echoes > 0
-                    tone: ui.faint
-                    text: qsTr("%n echoes dropped", "", engine.echoes)
+                    Layout.fillWidth: pane.narrow
+                    Layout.preferredWidth: pane.narrow ? -1 : needed
+                    ActionButton {
+                        visible: pane.isCurrent
+                        primary: true
+                        implicitHeight: 30
+                        text: pane.live ? qsTr("Pause") : qsTr("Resume")
+                        keys: "space"
+                        onClicked: engine.toggleListening()
+                    }
+                    ActionButton {
+                        visible: pane.isCurrent
+                        implicitHeight: 30
+                        text: qsTr("End")
+                        keys: "E"
+                        tip: qsTr("End the meeting and draft its wrap-up")
+                        onClicked: win.act("end", pane.m)
+                    }
+                    ActionButton {
+                        visible: pane.isCurrent
+                        implicitHeight: 30
+                        text: qsTr("Mark")
+                        keys: "M"
+                        tip: qsTr("Flag this moment as one that matters")
+                        onClicked: win.markNow()
+                    }
+                    ActionButton {
+                        implicitHeight: 30
+                        text: qsTr("Note")
+                        keys: "N"
+                        tip: qsTr("Type a line of your own into the transcript")
+                        onClicked: pane.note()
+                    }
+                    ActionButton {
+                        id: moreButton
+                        implicitHeight: 30
+                        menu: true
+                        tip: qsTr("Everything for this meeting (right-click it in the list, too)")
+                        onClicked: pane.openMenu()
+                    }
                 }
             }
 
-            // The switches: while it's on, listen/pause and end; afterwards,
-            // the notes and the transcript as tabs.
+            // When, how long, how much, with whom; and where the wrap-up is.
             Flow {
                 Layout.fillWidth: true
-                Layout.topMargin: 4
-                Layout.bottomMargin: pane.over ? 0 : 16
-                spacing: 8
-                visible: !pane.over
-                ActionButton {
-                    visible: pane.isCurrent
-                    primary: true
-                    text: pane.live ? qsTr("Pause") : qsTr("Resume")
-                    keys: "space"
-                    onClicked: engine.toggleListening()
+                spacing: 0
+                Repeater {
+                    id: metaItems
+                    model: {
+                        const out = []
+                        if (pane.isCurrent)
+                            out.push({ text: pane.live ? "● " + qsTr("Live %1").arg(Sidecar.elapsed(pane.m, pane.now)) : "● " + qsTr("Paused"),
+                                       color: pane.live ? ui.live : ui.muted })
+                        out.push({ text: Sidecar.span(pane.m) + (pane.over ? " · " + Sidecar.length(pane.m, pane.now) : ""), color: ui.muted })
+                        out.push({ text: qsTr("%n lines", "", pane.isCurrent ? transcript.count : (pane.m.lines || 0)), color: ui.faint })
+                        const people = pane.m.people || []
+                        if (people.length > 0)
+                            out.push({ text: people.length === 1 ? qsTr("with %1").arg(people[0]) : qsTr("with %1 +%2").arg(people[0]).arg(people.length - 1),
+                                       color: ui.muted, tip: people.join("\n") })
+                        else if (pane.m.event)
+                            out.push({ text: qsTr("from your calendar"), color: ui.faint })
+                        if (pane.isCurrent && engine.echoes > 0)
+                            out.push({ text: qsTr("%n echoes dropped", "", engine.echoes), color: ui.faint })
+                        return out
+                    }
+                    delegate: Label {
+                        required property var modelData
+                        required property int index
+                        readonly property bool last: index === metaItems.count - 1
+                        height: 22
+                        verticalAlignment: Text.AlignVCenter
+                        text: modelData.text + (last ? "" : "   ·   ")
+                        color: modelData.color
+                        font.pixelSize: 12
+                        HoverHandler { id: metaHover; enabled: !!modelData.tip }
+                        ToolTip.visible: metaHover.hovered && (modelData.tip || "").indexOf("\n") >= 0
+                        ToolTip.delay: 300
+                        ToolTip.text: modelData.tip || ""
+                    }
                 }
-                ActionButton {
-                    visible: pane.isCurrent
-                    text: qsTr("End meeting")
-                    keys: "E"
-                    onClicked: win.act("end", pane.m)
-                }
-                ActionButton {
-                    visible: pane.isCurrent
-                    text: qsTr("Mark")
-                    keys: "M"
-                    tip: qsTr("Flag this moment as one that matters")
-                    onClicked: win.markNow()
-                }
-                ActionButton {
-                    text: qsTr("Note")
-                    keys: "N"
-                    tip: qsTr("Type a line of your own into the transcript")
-                    onClicked: pane.note()
-                }
-                // Renaming and copying stay a key (or the ⋯ menu) away during a
-                // call, so the row keeps to what's needed mid-call.
-                ActionButton {
-                    visible: !pane.isCurrent
-                    text: qsTr("Rename")
-                    keys: "R"
-                    onClicked: pane.rename()
-                }
-                ActionButton {
-                    visible: !pane.isCurrent
-                    text: qsTr("Copy transcript")
-                    keys: "shift+C"
-                    enabled: transcript.count > 0
-                    onClicked: win.act("copyTranscript", pane.m)
-                }
+                Item { width: 12; height: 22; visible: stageChip.visible }
+                StageChip { id: stageChip; stage: pane.stage; m: pane.m }
             }
+
             UnderlineTabs {
                 Layout.fillWidth: true
                 Layout.leftMargin: -10
+                Layout.topMargin: 2
                 visible: pane.over
                 tabs: [
                     { label: qsTr("Notes"), count: 0, current: pane.tab === "notes", keys: "T", run: () => pane.tab = "notes",
