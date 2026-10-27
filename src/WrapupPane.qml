@@ -224,8 +224,8 @@ Rectangle {
             // Where it stands: drafted, edited, saved, in Notion, sending.
             Rectangle {
                 Layout.fillWidth: true
-                Layout.bottomMargin: 18
-                implicitHeight: statusRow.implicitHeight + 20
+                Layout.bottomMargin: 12
+                implicitHeight: statusRow.implicitHeight + 12
                 radius: Math.min(6, theme.radius)
                 color: root.stage === "sendFailed" ? ui.wash(ui.danger, 0.1)
                      : root.stage === "sent" ? ui.wash(ui.them, 0.08) : ui.panel
@@ -234,7 +234,7 @@ Rectangle {
                 RowLayout {
                     id: statusRow
                     anchors.fill: parent
-                    anchors.margins: 10
+                    anchors.margins: 6
                     anchors.leftMargin: 14
                     spacing: 10
                     Rectangle {
@@ -248,12 +248,14 @@ Rectangle {
                             NumberAnimation { to: 1; duration: 600 }
                         }
                     }
-                    ColumnLayout {
+                    // What's next, and how it got here, on one line.
+                    RowLayout {
                         Layout.fillWidth: true
-                        spacing: 2
+                        spacing: 10
                         Label {
-                            Layout.fillWidth: true
                             elide: Text.ElideRight
+                            Layout.preferredWidth: implicitWidth
+                            Layout.minimumWidth: Math.min(implicitWidth, 60)
                             color: ui.text
                             font.pixelSize: 12
                             font.bold: true
@@ -265,7 +267,9 @@ Rectangle {
                         }
                         Label {
                             Layout.fillWidth: true
+                            Layout.preferredWidth: 0
                             elide: Text.ElideRight
+                            visible: text !== ""
                             color: root.stage === "sendFailed" ? ui.danger : ui.faint
                             font.pixelSize: 11
                             text: {
@@ -288,6 +292,7 @@ Rectangle {
                     ActionButton {
                         visible: root.stage !== "sent"
                         primary: true
+                        implicitHeight: 30
                         busy: root.stage === "sending"
                         enabled: root.stage !== "sending" && !root.drafting
                         text: root.stage === "sendFailed" ? qsTr("Try again") : root.stage === "sending" ? qsTr("Sending")
@@ -297,46 +302,51 @@ Rectangle {
                     }
                     ActionButton {
                         visible: root.stage === "sent"
+                        implicitHeight: 30
                         text: qsTr("Open in Notion ↗")
                         keys: "O"
                         onClicked: win.act("notion", root.m)
                     }
                     ActionButton {
-                        visible: root.width >= 560
-                        text: root.width >= 760 ? qsTr("Email") : "✉"
+                        visible: root.width >= 440
+                        implicitHeight: 30
+                        text: qsTr("Email")
                         tip: qsTr("Write the follow-up email, saved to Outlook Drafts (W)")
-                        keys: root.width >= 760 ? "W" : ""
+                        keys: root.width >= 700 ? "W" : ""
                         onClicked: win.act("email", root.m)
                     }
                     ActionButton {
-                        visible: root.width >= 640
+                        visible: root.width >= 520
+                        implicitHeight: 30
                         text: qsTr("Copy")
                         tip: qsTr("Copy as Markdown")
-                        keys: "C"
+                        keys: root.width >= 700 ? "C" : ""
                         onClicked: win.act("copyNotes", root.m)
                     }
                 }
             }
 
-            // The title it's filed under.
-            Field {
+            // The title it's filed under in Notion; the header above already
+            // says when and how long.
+            RowLayout {
                 Layout.fillWidth: true
-                size: 22
-                bold: true
-                placeholder: qsTr("Title")
-                Layout.leftMargin: -6
-                text: root.doc ? root.doc.title : ""
-                onEdited: t => { root.doc.title = t; root.touched() }
-            }
-            Label {
-                Layout.fillWidth: true
-                Layout.topMargin: 2
-                Layout.bottomMargin: 6
-                text: Sidecar.dayLabel(root.m) + "  ·  " + Sidecar.span(root.m) + "  ·  " + Sidecar.length(root.m, root.now)
-                      + (root.doc && root.doc.title !== root.m.title ? "  ·  " + qsTr("“%1” in Sidecar").arg(root.m.title) : "")
-                color: ui.faint
-                font.pixelSize: 11
-                elide: Text.ElideRight
+                Layout.bottomMargin: 2
+                spacing: 8
+                Label {
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.topMargin: 2
+                    text: qsTr("Filed as")
+                    color: ui.faint
+                    font.pixelSize: 11
+                }
+                Field {
+                    Layout.fillWidth: true
+                    size: 15
+                    bold: true
+                    placeholder: qsTr("Title")
+                    text: root.doc ? root.doc.title : ""
+                    onEdited: t => { root.doc.title = t; root.touched() }
+                }
             }
 
             Heading { text: qsTr("TL;DR") }
