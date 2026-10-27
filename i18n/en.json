@@ -2,7 +2,9 @@
   "bar.in": "{title} · in {time}",
   "bar.starting": "{title} · now",
   "bar.left": "{title} · {time} left",
+  "bar.listening": "{title} · {time}",
   "bar.tooltip": "Today's meetings",
+  "bar.tooltipListening": "Aloi Sidecar is listening · click for today's meetings",
   "bar.tooltipJoin": "Right-click to join",
   "bar.tooltipSignedOut": "Meetings · sign in to see your calendar",
   "bar.tooltipSigningIn": "Meetings · finish signing in in your browser",
@@ -46,5 +48,12 @@
   "footer.updated": "Updated {time}",
   "footer.offline": "Offline · as of {time}",
   "footer.error": "Couldn't refresh · as of {time}",
-  "footer.signOut": "Sign out"
+  "footer.signOut": "Sign out",
+  "sidecar.listening": "Sidecar is listening · {time}",
+  "sidecar.open": "Open",
+  "sidecar.stop": "Stop",
+  "sidecar.joinListen": "Join and listen",
+  "sidecar.listen": "Listen with Sidecar",
+  "sidecar.wrapUp": "{count} to wrap up in Sidecar",
+  "sidecar.wrapUpOne": "1 to wrap up in Sidecar"
 }

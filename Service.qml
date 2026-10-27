@@ -88,6 +88,69 @@ Item {
     Quickshell.execDetached(["omarchy-launch-webapp", event.webLink])
   }
 
+  // ---------- Aloi Sidecar ----------
+  // Sidecar (~/Work/sidecar) hears and transcribes calls. Its engine runs on
+  // this machine; the bar shows when it's listening, and the panel can start
+  // it for a meeting, stop it, or open it for the meetings still to wrap up.
+
+  readonly property string sidecarUrl: "http://127.0.0.1:8777"
+  // {connected, listening, title, started, toWrapUp}
+  property var sidecar: ({ connected: false })
+
+  function pollSidecar() {
+    var request = new XMLHttpRequest()
+    request.onreadystatechange = function() {
+      if (request.readyState !== XMLHttpRequest.DONE) return
+      var reply = request.status === 200 ? root.parse(request.responseText) : null
+      if (!reply) { if (root.sidecar.connected) root.sidecar = { connected: false }; return }
+      var m = reply.meeting || {}
+      root.sidecar = {
+        connected: true,
+        listening: !!reply.listening,
+        title: m.title || "",
+        started: Number(m.started || 0) * 1000,
+        toWrapUp: Number(reply.to_wrap_up || 0)
+      }
+    }
+    request.open("GET", root.sidecarUrl + "/status")
+    request.send()
+  }
+
+  function sidecarPost(path, body) {
+    var request = new XMLHttpRequest()
+    request.onreadystatechange = function() {
+      if (request.readyState === XMLHttpRequest.DONE) root.pollSidecar()
+    }
+    request.open("POST", root.sidecarUrl + path)
+    request.setRequestHeader("Content-Type", "application/json")
+    request.send(JSON.stringify(body || {}))
+  }
+
+  // Sidecar's window, without starting to listen (it's already listening, or
+  // there's a wrap-up to look at).
+  function openSidecar() { Quickshell.execDetached(["aloi-sidecar", "--no-listen"]) }
+
+  // A meeting of its own in Sidecar, named and peopled from the calendar.
+  function listenTo(event) {
+    root.sidecarPost("/meeting/start", event ? { event: event } : {})
+    root.openSidecar()
+  }
+
+  function joinAndListen(event) {
+    if (event && event.joinUrl) root.join(event)
+    root.listenTo(event)
+  }
+
+  function stopListening() { root.sidecarPost("/listen", { on: false }) }
+
+  Timer {
+    interval: root.sidecar.listening || root.panelOpen ? 4000 : 15000
+    running: true
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: root.pollSidecar()
+  }
+
   // ---------- Talking to the helper ----------
 
   function run(process, args) {

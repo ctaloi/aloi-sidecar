@@ -25,6 +25,9 @@ Panel {
   // Soon enough to get up for: the last five minutes, and the first one in.
   readonly property bool urgent: match !== null && (match.phase === "starting" || (match.phase === "soon" && match.minutes <= 5))
   readonly property bool joinable: match !== null && (match.event.joinUrl || "") !== ""
+  // Aloi Sidecar listening to a call: the bar says so, in red, with how long.
+  readonly property var sidecar: service ? service.sidecar : ({})
+  readonly property bool listening: !!sidecar.listening
 
   Commons.Translations { id: strings; directory: Qt.resolvedUrl("i18n") }
 
@@ -47,6 +50,10 @@ Panel {
   }
 
   readonly property string label: {
+    if (listening) {
+      var minutes = Math.max(0, Math.floor(((service ? service.now : Date.now()) - sidecar.started) / 60000))
+      return t("bar.listening", { title: Model.shortTitle(sidecar.title || t("event.untitled"), root.maxTitle), time: span(minutes) })
+    }
     if (!match) return ""
     var title = titleOf(match.event)
     if (match.phase === "soon") return t("bar.in", { title: title, time: span(match.minutes) })
@@ -55,6 +62,7 @@ Panel {
   }
 
   readonly property string tooltip: {
+    if (listening) return t("bar.tooltipListening")
     if (phase === "signedOut") return t("bar.tooltipSignedOut")
     if (phase === "signingIn") return t("bar.tooltipSigningIn")
     if (!match) return t("bar.tooltip")
@@ -117,9 +125,9 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.label !== "" ? "󰃭  " + root.label : "󰃭"
-    active: root.urgent
-    activeColor: Commons.Color.accent
+    text: root.listening ? "●  " + root.label : root.label !== "" ? "󰃭  " + root.label : "󰃭"
+    active: root.urgent || root.listening
+    activeColor: root.listening ? Commons.Color.urgent : Commons.Color.accent
     dimmed: root.phase === "signedOut" || root.phase === "consent" || root.phase === "keyring"
     tooltipText: root.tooltip
     onPressed: function(mouseButton) {

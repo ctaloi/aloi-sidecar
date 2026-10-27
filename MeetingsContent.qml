@@ -329,6 +329,116 @@ Item {
           }
         }
 
+        // ---------- Aloi Sidecar: listening, or ready to ----------
+        Column {
+          id: sidecarStrip
+          readonly property var sc: root.service ? root.service.sidecar : ({})
+          // What Sidecar would listen to: the meeting on now or about to start.
+          readonly property var target: root.match ? root.match.event : null
+          visible: !!sc.connected && (sc.listening || target !== null || sc.toWrapUp > 0)
+          width: parent.width
+          spacing: Style.space(10)
+
+          PanelSeparator { foreground: root.foreground }
+
+          Item {
+            visible: !!sidecarStrip.sc.listening
+            width: parent.width
+            implicitHeight: Math.max(listeningLabel.implicitHeight, listeningButtons.implicitHeight)
+            Row {
+              id: listeningLabel
+              anchors.left: parent.left
+              anchors.right: listeningButtons.left
+              anchors.rightMargin: Style.space(10)
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(8)
+              Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: Style.space(8); height: width; radius: width / 2
+                color: Color.urgent
+                SequentialAnimation on opacity {
+                  running: sidecarStrip.visible && root.opened
+                  loops: Animation.Infinite
+                  NumberAnimation { to: 0.3; duration: 800 }
+                  NumberAnimation { to: 1; duration: 800 }
+                }
+              }
+              Column {
+                width: parent.width - Style.space(16)
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  text: sidecarStrip.sc.title || ""
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.bold: true
+                  elide: Text.ElideRight
+                }
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  text: root.t("sidecar.listening", { time: root.span(Math.max(0, Math.floor((root.now - sidecarStrip.sc.started) / 60000))) })
+                  color: Color.urgent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  elide: Text.ElideRight
+                }
+              }
+            }
+            Row {
+              id: listeningButtons
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(6)
+              Button {
+                text: root.t("sidecar.open")
+                fontSize: Style.font.bodySmall
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                bordered: true
+                onClicked: { root.service.openSidecar(); root.close() }
+              }
+              Button {
+                text: root.t("sidecar.stop")
+                fontSize: Style.font.bodySmall
+                foreground: Color.urgent
+                fontFamily: root.fontFamily
+                bordered: true
+                onClicked: root.service.stopListening()
+              }
+            }
+          }
+
+          Button {
+            visible: !sidecarStrip.sc.listening && sidecarStrip.target !== null
+            text: sidecarStrip.target && sidecarStrip.target.joinUrl ? root.t("sidecar.joinListen") : root.t("sidecar.listen")
+            tooltipText: sidecarStrip.target ? root.titleOf(sidecarStrip.target) : ""
+            fontSize: Style.font.bodySmall
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            bordered: true
+            onClicked: { root.service.joinAndListen(sidecarStrip.target); root.close() }
+          }
+
+          Text {
+            visible: (sidecarStrip.sc.toWrapUp || 0) > 0
+            textFormat: Text.PlainText
+            text: sidecarStrip.sc.toWrapUp === 1 ? root.t("sidecar.wrapUpOne") : root.t("sidecar.wrapUp", { count: sidecarStrip.sc.toWrapUp })
+            color: wrapUpMouse.containsMouse ? Color.accent : root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            font.underline: wrapUpMouse.containsMouse
+            MouseArea {
+              id: wrapUpMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: { root.service.openSidecar(); root.close() }
+            }
+          }
+        }
+
         // ---------- All-day events: one quiet line ----------
         Text {
           visible: root.allDay.length > 0 && root.signedIn
