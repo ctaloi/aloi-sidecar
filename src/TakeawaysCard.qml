@@ -19,10 +19,15 @@ Rectangle {
         { key: "questions", title: qsTr("Open"), tone: ui.muted }
     ]
     readonly property int total: sections.reduce((n, s) => n + ((t[s.key] || []).length), 0)
-    property bool open: true
+    // Open while there's no conversation to make room for; folded to its
+    // counts once there is, unless Chris opens or folds it himself.
+    property bool chosen: false
+    property bool chosenOpen: true
+    readonly property bool open: chosen ? chosenOpen : agent.messages.length === 0
+    function toggle() { chosenOpen = !open; chosen = true }
 
     visible: live && total > 0
-    implicitHeight: column.implicitHeight + 20
+    implicitHeight: column.implicitHeight + (open ? 20 : 16)
     radius: Math.min(6, theme.radius)
     color: ui.window
     border.color: ui.line
@@ -32,7 +37,7 @@ Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: 10
+        anchors.margins: card.open ? 10 : 8
         anchors.leftMargin: 14
         spacing: 8
 
@@ -47,10 +52,29 @@ Rectangle {
                 font.bold: true
             }
             Label {
+                visible: card.open
                 Layout.fillWidth: true
                 text: card.t.updated ? qsTr("as of %1").arg(Sidecar.clock(card.t.updated)) : ""
                 color: ui.faint
                 font.pixelSize: 10
+            }
+            // Folded: how many of each, in their colors.
+            Row {
+                visible: !card.open
+                Layout.fillWidth: true
+                clip: true
+                spacing: 12
+                Repeater {
+                    model: card.sections
+                    delegate: Label {
+                        required property var modelData
+                        readonly property int n: (card.t[modelData.key] || []).length
+                        visible: n > 0
+                        text: n + " " + ({ asked: qsTr("asked"), mine: qsTr("yours"), decisions: qsTr("decided"), questions: qsTr("open") })[modelData.key]
+                        color: modelData.tone
+                        font.pixelSize: 11
+                    }
+                }
             }
             Label {
                 text: card.open ? "▾" : "▸"
@@ -105,6 +129,6 @@ Rectangle {
     }
     TapHandler {
         // The header folds it away.
-        onTapped: (point) => { if (point.position.y < 30) card.open = !card.open }
+        onTapped: (point) => { if (point.position.y < 30) card.toggle() }
     }
 }

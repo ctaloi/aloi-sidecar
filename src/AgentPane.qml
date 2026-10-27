@@ -52,12 +52,20 @@ Rectangle {
                 font.pixelSize: 14
                 font.bold: true
             }
+            // Which meetings the next question is about: this one, or (ctrl+A)
+            // all of them for one question.
             Label {
                 Layout.fillWidth: true
-                text: engine.selectedMeeting.title || ""
-                color: ui.faint
+                text: (agent.wide ? "◎ " + qsTr("All meetings") : (engine.selectedMeeting.title || "")) + "  ▾"
+                color: agent.wide ? theme.accent : scopeHover.hovered ? ui.muted : ui.faint
                 font.pixelSize: 12
                 elide: Text.ElideRight
+                HoverHandler { id: scopeHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: agent.wide = !agent.wide }
+                ToolTip.visible: scopeHover.hovered
+                ToolTip.delay: 400
+                ToolTip.text: agent.wide ? qsTr("The next question searches every meeting (ctrl+A switches back)")
+                                         : qsTr("Ask the next question across every meeting (ctrl+A)")
             }
             ActionButton {
                 visible: agent.messages.length > 0
@@ -85,6 +93,7 @@ Rectangle {
             bottomMargin: 16
             spacing: 18
             model: agent.messages
+            visible: count > 0
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             onCountChanged: Qt.callLater(positionViewAtEnd)
@@ -149,25 +158,26 @@ Rectangle {
             }
         }
 
-        Column {
+        // Before the first question: what it can do, at the top where the
+        // answers will be.
+        Item {
             Layout.fillWidth: true
-            Layout.margins: 18
-            Layout.topMargin: 0
-            spacing: 8
+            Layout.fillHeight: true
             visible: agent.messages.length === 0
-            Text {
-                width: parent.width
-                text: pane.over ? qsTr("Ask about this meeting") : qsTr("Ask about the call")
-                color: ui.text
-                font.pixelSize: 16
-                font.bold: true
-            }
-            Text {
-                width: parent.width
-                wrapMode: Text.Wrap
-                color: ui.muted
-                font.pixelSize: 12
-                text: qsTr("Claude reads this meeting's transcript, and only this one's, and can look things up with your skills: a customer's numbers, your mail and calendar, Notion. Anything beyond a lookup asks you first.")
+            Column {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 18
+                spacing: 6
+                Text {
+                    width: parent.width
+                    wrapMode: Text.Wrap
+                    color: ui.muted
+                    font.pixelSize: 12
+                    lineHeight: 1.15
+                    text: qsTr("Reads this meeting's transcript and looks things up with your skills: a customer's numbers, your mail and calendar, Notion. Anything beyond a lookup asks you first.")
+                }
             }
         }
 
@@ -262,7 +272,8 @@ Rectangle {
             Layout.rightMargin: 14
             Layout.topMargin: 6
             spacing: 6
-            visible: !agent.running
+            // Before the first question, or while in the box; 1–4 work anyway.
+            visible: !agent.running && (agent.messages.length === 0 || field.activeFocus)
             Repeater {
                 model: pane.chips
                 delegate: Rectangle {
@@ -297,7 +308,8 @@ Rectangle {
             Layout.fillWidth: true
             Layout.leftMargin: 14
             Layout.rightMargin: 14
-            Layout.topMargin: 12
+            Layout.topMargin: 10
+            Layout.bottomMargin: 14
             spacing: 8
             TextField {
                 id: field
@@ -325,40 +337,6 @@ Rectangle {
                 implicitHeight: field.height - 8
                 onClicked: agent.running ? agent.stop() : pane.ask(field.text)
             }
-        }
-        // The keys that matter here, while you're in the box, and which
-        // meetings the next question is about.
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.leftMargin: 16
-            Layout.rightMargin: 14
-            Layout.topMargin: 6
-            Layout.bottomMargin: 12
-            spacing: 8
-        Text {
-            Layout.fillWidth: true
-            textFormat: Text.StyledText
-            color: ui.faint
-            font.pixelSize: 11
-            text: {
-                const k = s => "<font color='" + theme.accent + "'>" + s + "</font>"
-                return field.activeFocus
-                    ? k("enter") + " " + qsTr("asks") + "   " + k("esc") + " " + (agent.running ? qsTr("stops") : qsTr("leaves"))
-                    : k("/") + " " + qsTr("asks") + "   " + k("1–4") + " " + qsTr("suggested questions")
-            }
-        }
-        Chip {
-            text: agent.wide ? qsTr("All meetings") : qsTr("This meeting")
-            tone: agent.wide ? theme.accent : ui.faint
-            filled: agent.wide
-            glyph: agent.wide ? "◎" : "○"
-            HoverHandler { id: scopeHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: agent.wide = !agent.wide }
-            ToolTip.visible: scopeHover.hovered
-            ToolTip.delay: 400
-            ToolTip.text: agent.wide ? qsTr("The next question searches every meeting (ctrl+A switches back)")
-                                     : qsTr("Ask the next question across every meeting (ctrl+A)")
-        }
         }
     }
 }
