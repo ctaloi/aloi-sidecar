@@ -67,12 +67,14 @@ PEOPLE = {current_id: ["Amy Reed", "Sam Ortiz"], "past-0": ["Dana Park"], "past-
 def meta(mid, title, started, ended, st, lines, event=None):
     w = wrapups.get(mid)
     return {"id": mid, "title": title, "started": started, "ended": ended, "state": st, "event": event,
-            "people": PEOPLE.get(mid, []), "notion": notion.get(mid), "lines": lines, "skipped": mid in skipped,
+            "people": PEOPLE.get(mid, []), "voices": {"1": {"name": (PEOPLE.get(mid) or ["Them"])[0].split()[0], "by": "guess"}}, "notion": notion.get(mid), "lines": lines, "skipped": mid in skipped,
             "wrapup": w["state"] if w else None, "edited": bool(w and w.get("edited"))}
 
 
 def segs(lines, t0, gap=40):
-    return [{"id": i, "speaker": who, "start": t0 + i * gap, "end": t0 + i * gap + 6, "text": text}
+    # The other side told apart: two voices, the first one named.
+    return [{"id": i, "speaker": who, "start": t0 + i * gap, "end": t0 + i * gap + 6, "text": text,
+             **({"voice": 1 if i % 4 else 2} if who == "Them" else {})}
             for i, (who, text) in enumerate(lines)]
 
 

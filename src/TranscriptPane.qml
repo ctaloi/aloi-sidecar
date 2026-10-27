@@ -11,6 +11,11 @@ Rectangle {
     color: ui.window
 
     readonly property bool following: list.stick
+    // Each voice past the first gets its own hue, so a run of lines reads by colour.
+    function voiceColor(v) {
+        const hues = [0.58, 0.78, 0.09, 0.95, 0.45, 0.68]
+        return Qt.hsla(hues[(v - 2) % hues.length], 0.55, theme.dark ? 0.7 : 0.38, 1)
+    }
     // With one other person in the meeting, the other side has their name.
     readonly property string them: {
         const people = engine.selectedMeeting.people || []
@@ -44,6 +49,31 @@ Rectangle {
                 meetingPane.agentPane.input.cursorPosition = meetingPane.agentPane.input.text.length
             }
         }
+        // Whose voice it is, for a line told apart by voice.
+        Repeater {
+            model: lineMenu.line.voice > 0 ? (engine.selectedMeeting.people || []).slice(0, 6) : []
+            delegate: MenuRow {
+                required property string modelData
+                text: qsTr("This is %1").arg(modelData)
+                onTriggered: engine.nameVoice(engine.selected, lineMenu.line.voice, modelData)
+            }
+        }
+        MenuRow {
+            visible: lineMenu.line.voice > 0
+            text: qsTr("Name this voice…")
+            onTriggered: {
+                const v = lineMenu.line.voice, id = engine.selected
+                palette.choose(qsTr("Who is %1? Type a name").arg(lineMenu.line.who),
+                               (engine.selectedMeeting.people || []).map(p => ({ label: p, run: () => engine.nameVoice(id, v, p) })),
+                               text => engine.nameVoice(id, v, text))
+            }
+        }
+        MenuRow {
+            visible: lineMenu.line.voice > 0 && lineMenu.line.who !== qsTr("Voice %1").arg(lineMenu.line.voice)
+            text: qsTr("Forget this voice's name")
+            onTriggered: engine.nameVoice(engine.selected, lineMenu.line.voice, "")
+        }
+        MenuLine { visible: lineMenu.line.voice > 0 }
         MenuRow {
             text: qsTr("Copy this line")
             onTriggered: { engine.copyToClipboard(lineMenu.line.text); toast.show(qsTr("Copied the line.")) }
@@ -96,6 +126,8 @@ Rectangle {
             required property string time
             required property double start
             required property bool mine
+            required property int voice
+            required property string voiceName
             // A run of lines from the same side shows the name once.
             required property bool runStart
             readonly property bool sameAsAbove: !runStart
@@ -107,7 +139,7 @@ Rectangle {
             // Right-click a line: copy it, or ask the agent about it.
             TapHandler {
                 acceptedButtons: Qt.RightButton
-                onTapped: (point) => { lineMenu.line = { text: row.text, time: row.time, speaker: row.mine ? qsTr("I") : who.text }; lineMenu.popup(row, point.position.x, point.position.y) }
+                onTapped: (point) => { lineMenu.line = { text: row.text, time: row.time, speaker: row.mine ? qsTr("I") : who.text, voice: row.voice, who: row.voiceName }; lineMenu.popup(row, point.position.x, point.position.y) }
             }
 
             Rectangle {
@@ -146,17 +178,17 @@ Rectangle {
                 id: who
                 x: 86
                 y: body.y
-                width: 56
+                width: 78
                 visible: !row.sameAsAbove || row.isMark
-                text: row.mine ? qsTr("Me") : row.isNote ? qsTr("Note") : row.isMark ? "⚑" : pane.them
-                color: row.mine ? ui.me : row.isNote || row.isMark ? theme.accent : ui.them
+                text: row.mine ? qsTr("Me") : row.isNote ? qsTr("Note") : row.isMark ? "⚑" : row.voice > 0 ? row.voiceName : pane.them
+                color: row.mine ? ui.me : row.isNote || row.isMark ? theme.accent : row.voice > 1 ? pane.voiceColor(row.voice) : ui.them
                 font.pixelSize: 13
                 font.bold: true
                 elide: Text.ElideRight
             }
             TextEdit {
                 id: body
-                x: 146
+                x: 170
                 y: row.sameAsAbove ? 2 : 8
                 width: row.width - x - 22
                 text: row.text
@@ -197,7 +229,7 @@ Rectangle {
                     }
                     Text {
                         id: live
-                        x: 146
+                        x: 170
                         y: 5
                         width: list.width - x - 22
                         text: modelData.text

@@ -42,6 +42,17 @@ private slots:
         QCOMPARE(model.rowCount(), 0);
     }
 
+    // Lines told apart by voice read as the voice's name, or "Voice 2".
+    void voicesReadAsNames() {
+        Transcript t;
+        t.setLines({{0, "Them", "Hi", "10:00:00", 1, 1}, {1, "Them", "Hello", "10:00:01", 2, 2}, {2, "Chris", "Hey", "10:00:02", 3, 0}});
+        t.setNames(QVariantMap{{"1", QVariantMap{{"name", "Hector"}, {"by", "hand"}}}});
+        QCOMPARE(t.data(t.index(0), Transcript::WhoRole).toString(), QString("Hector"));
+        QCOMPARE(t.data(t.index(1), Transcript::WhoRole).toString(), QString("Voice 2"));
+        QVERIFY(t.data(t.index(1), Transcript::RunStartRole).toBool());  // another voice starts a run
+        QVERIFY(t.textAfter(-1).contains("Hector: Hi"));
+    }
+
     void liveMeetingFromEvents() {
         Engine engine("http://127.0.0.1:1");
         engine.handleEvent({{"type", "meetings"}, {"meetings", QJsonArray{meeting("b", "live", 2000), meeting("a", "ended", 1000)}}});

@@ -27,15 +27,34 @@ QVariant Transcript::data(const QModelIndex &index, int role) const {
     case TimeRole: return l.time;
     case StartRole: return l.start;
     case MineRole: return l.speaker == Me;
-    // The first of a run of lines from one side, which shows the name.
-    case RunStartRole: return index.row() == 0 || m_lines.at(index.row() - 1).speaker != l.speaker;
+    // The first of a run of lines from one side (or one voice), which shows the name.
+    case RunStartRole: return index.row() == 0 || m_lines.at(index.row() - 1).speaker != l.speaker
+                              || m_lines.at(index.row() - 1).voice != l.voice;
+    case VoiceRole: return l.voice;
+    case WhoRole: return who(l);
     }
     return {};
 }
 
 QHash<int, QByteArray> Transcript::roleNames() const {
     return {{IdRole, "lineId"}, {SpeakerRole, "speaker"}, {TextRole, "text"},
-            {TimeRole, "time"}, {StartRole, "start"}, {MineRole, "mine"}, {RunStartRole, "runStart"}};
+            {TimeRole, "time"}, {StartRole, "start"}, {MineRole, "mine"}, {RunStartRole, "runStart"},
+            {VoiceRole, "voice"}, {WhoRole, "voiceName"}};
+}
+
+QString Transcript::who(const Line &l) const {
+    if (l.voice <= 0)
+        return l.speaker;
+    const QString name = m_names.value(QString::number(l.voice)).toMap().value("name").toString();
+    return name.isEmpty() ? QStringLiteral("Voice %1").arg(l.voice) : name;
+}
+
+void Transcript::setNames(const QVariantMap &names) {
+    if (names == m_names)
+        return;
+    m_names = names;
+    if (!m_lines.isEmpty())
+        emit dataChanged(index(0), index(int(m_lines.size()) - 1), {WhoRole});
 }
 
 void Transcript::append(const Line &line) {
@@ -65,7 +84,7 @@ QString Transcript::textAfter(int id) const {
     QStringList rows;
     for (const auto &l : m_lines)
         if (l.id > id)
-            rows << QString("[%1] %2: %3").arg(l.time, l.speaker, l.text);
+            rows << QString("[%1] %2: %3").arg(l.time, who(l), l.text);
     return rows.join('\n');
 }
 
@@ -90,6 +109,10 @@ Engine::Engine(const QString &url, QObject *parent)
     m_retry.setSingleShot(true);
     m_retry.setInterval(2000);
     connect(&m_retry, &QTimer::timeout, this, &Engine::connectToEngine);
+    // The transcript names voices the way the meeting on screen does.
+    connect(this, &Engine::selectedMeetingChanged, this, [this] {
+        m_transcript.setNames(selectedMeeting().value("voices").toMap());
+    });
 }
 
 Engine::~Engine() {
@@ -189,7 +212,7 @@ void Engine::setLoading(bool on) {
 
 Transcript::Line Engine::lineFrom(const QJsonObject &s) {
     return {s.value("id").toInt(), s.value("speaker").toString(), s.value("text").toString(),
-            s.value("time").toString(), s.value("start").toDouble()};
+            s.value("time").toString(), s.value("start").toDouble(), s.value("voice").toInt()};
 }
 
 QVariantMap Engine::meetingById(const QString &id) const {
@@ -504,6 +527,10 @@ void Engine::finish(const QString &id) {
         if (QJsonDocument::fromJson(data).object().value("started").toObject().value("notion").toString() == "choose")
             emit choosePage(id);
     });
+}
+
+void Engine::nameVoice(const QString &id, int voice, const QString &name) {
+    post(path(id), QJsonObject{{"voices", QJsonObject{{QString::number(voice), name.trimmed()}}}}, "PATCH");
 }
 
 void Engine::remove(const QString &id) {

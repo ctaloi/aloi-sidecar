@@ -39,6 +39,19 @@ Claude Code.
   everything else: draft again, send, open in Notion, copy the wrap-up or
   transcript, mark it as needing no wrap-up, show its files, delete it (to
   `~/.local/share/aloi-sidecar/trash`).
+- **Going in.** A meeting opens with what's on file from earlier ones in
+  its series or with the same people: their gist, what you still owe, what
+  they said they'd do. "Brief me with mail and Teams" asks the agent for more.
+- **Lookup cards.** The takeaways pick out what's worth checking (a
+  customer, a number, a ticket, a circuit); one click has the agent look it
+  up with your skills, read-only.
+- **Voices (settings ⋯, off until you turn it on).** The other side is told
+  apart by voice (Voice 1, Voice 2…, per meeting) and named from the
+  conversation, or by you: right-click a line → "This is…". Wrap-ups,
+  takeaways and Notion use the names.
+- **Do it all (`A`).** After a call: a new Notion page and the follow-up email
+  in Outlook Drafts, in one click (it asks which page when there's already
+  one from that day to fill in).
 - **It records calls by itself.** When another app (Teams, Zoom, a browser
   tab) holds the mic for more than a few seconds, Sidecar starts listening
   straight away, named from the call app's window and your calendar, and a

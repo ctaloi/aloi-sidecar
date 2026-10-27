@@ -17,7 +17,7 @@ class Transcript : public QAbstractListModel {
     Q_PROPERTY(int count READ count NOTIFY countChanged)
 
 public:
-    enum Role { IdRole = Qt::UserRole + 1, SpeakerRole, TextRole, TimeRole, StartRole, MineRole, RunStartRole };
+    enum Role { IdRole = Qt::UserRole + 1, SpeakerRole, TextRole, TimeRole, StartRole, MineRole, RunStartRole, VoiceRole, WhoRole };
     using QAbstractListModel::QAbstractListModel;
 
     int rowCount(const QModelIndex &parent = {}) const override { return parent.isValid() ? 0 : m_lines.size(); }
@@ -29,7 +29,12 @@ public:
         int id = -1;
         QString speaker, text, time;
         double start = 0;
+        int voice = 0;  // which of the other side's voices, when they're told apart
     };
+    // The meeting's names for its voices ({"2": {"name": "Hector", "by": "hand"}}).
+    void setNames(const QVariantMap &names);
+    // How a line's speaker reads: a voice's name, "Voice 2", or the speaker.
+    QString who(const Line &line) const;
     void append(const Line &line);
     void clear();
     void setLines(const QList<Line> &lines);
@@ -46,6 +51,7 @@ signals:
 
 private:
     QList<Line> m_lines;
+    QVariantMap m_names;
 };
 
 // The engine (engine/engine.py, a systemd user service) hears the meeting
@@ -157,6 +163,8 @@ public:
     Q_INVOKABLE void merge(const QString &id, const QString &other);
     // After a call, in one go: a new Notion page and the email in Drafts.
     Q_INVOKABLE void finish(const QString &id);
+    // Names one of the meeting's voices (empty forgets the name).
+    Q_INVOKABLE void nameVoice(const QString &id, int voice, const QString &name);
     // Move a meeting to the trash folder.
     Q_INVOKABLE void remove(const QString &id);
     // Mark a meeting as needing no wrap-up (a test call), or undo that.

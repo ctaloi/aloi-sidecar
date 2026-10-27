@@ -196,6 +196,12 @@ Rectangle {
                     onTriggered: engine.setSetting("live_takeaways", !(engine.settings.live_takeaways !== false))
                 }
                 MenuRow {
+                    text: qsTr("Tell their voices apart, and name them")
+                    setting: true
+                    on: engine.settings.speaker_names === true
+                    onTriggered: engine.setSetting("speaker_names", engine.settings.speaker_names !== true)
+                }
+                MenuRow {
                     text: qsTr("End after a long silence")
                     setting: true
                     on: engine.settings.stop_on_silence !== false

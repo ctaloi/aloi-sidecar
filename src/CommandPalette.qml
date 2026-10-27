@@ -30,11 +30,14 @@ Popup {
     readonly property var shown: {
         const q = field.text.trim().toLowerCase()
         if (q === "") return entries.filter(e => e.group !== "meeting" || e.recent)
-        return entries.map(e => ({ e: e, s: score(e.label + " " + (e.detail || ""), q) }))
+        const found = entries.map(e => ({ e: e, s: score(e.label + " " + (e.detail || ""), q) }))
                       .filter(x => x.s > 0)
                       .sort((a, b) => b.s - a.s)
                       .slice(0, 40)
                       .map(x => x.e)
+        if (!typed) return found
+        const text = field.text.trim(), use = typed
+        return [{ group: "pick", keys: "enter", label: qsTr("Use “%1”").arg(text), run: () => use(text) }].concat(found)
     }
     onShownChanged: picked = 0
 
@@ -56,8 +59,11 @@ Popup {
 
     // Also a picker: choose(prompt, [{label, detail, run}]) lists just those.
     property string prompt: ""
-    function choose(p, items) {
+    // With typed, what's typed can be picked too ("Use “…”"), and goes to typed(text).
+    property var typed: null
+    function choose(p, items, onTyped) {
         prompt = p
+        typed = onTyped || null
         entries = items.map(x => Object.assign({ group: "pick", keys: "" }, x))
         field.text = ""
         open()
@@ -66,6 +72,7 @@ Popup {
 
     function show() {
         prompt = ""
+        typed = null
         build()
         field.text = ""
         open()
@@ -148,6 +155,8 @@ Popup {
         flip("calendar_offers", qsTr("Turn on: offers before calendar meetings"), qsTr("Turn off: offers before calendar meetings"))
         flip("live_takeaways", qsTr("Turn on: live takeaways"), qsTr("Turn off: live takeaways"))
         flip("stop_on_silence", qsTr("Turn on: end after a long silence"), qsTr("Turn off: end after a long silence"))
+        add("setting", s.speaker_names === true ? qsTr("Turn off: tell their voices apart") : qsTr("Turn on: tell their voices apart"), "",
+            () => engine.setSetting("speaker_names", s.speaker_names !== true))
 
         const meetings = engine.meetings.slice().sort((a, b) => (b.started || 0) - (a.started || 0))
         meetings.forEach((x, i) => add("meeting", x.title || qsTr("Untitled"), "", () => win.openFrom(x.id, -1),
