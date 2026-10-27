@@ -752,8 +752,30 @@ class Sidecar:
                 self.edit_wrapup(m, doc, tick=False)
                 self.broadcast({"type": "followups"})
 
+    async def link_todos(self):
+        """Meetings sent before follow-ups knew their to-dos: find each one's
+        to-do on the page by its text. Only reads from Notion."""
+        for m in list(self.meetings.values()):
+            n = m.meta.get("notion") or {}
+            notes = m.notes()
+            if n.get("state") != "sent" or not notes or all(i.get("notion") for i in notes.get("mine", [])):
+                continue
+            todos = await notion.todos_on(self.notion, n["id"])
+            doc = json.loads(json.dumps(notes))
+            used = {i.get("notion") for i in doc["mine"]}
+            for item in doc["mine"]:
+                if item.get("notion"):
+                    continue
+                want = item["text"] + (f" ({item['due']})" if item.get("due") else "")
+                match = next((t for t in todos if t[0] not in used and t[1].strip() in (want.strip(), item["text"].strip())), None)
+                if match:
+                    item["notion"] = match[0]
+                    used.add(match[0])
+            self.edit_wrapup(m, doc, tick=False)
+
     async def pull_ticks(self):
         """Ticks made in Notion come back to Sidecar."""
+        await self.link_todos()
         changed = 0
         for f in self.followups():
             if not f["inNotion"]:

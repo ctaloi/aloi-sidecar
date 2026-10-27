@@ -276,6 +276,20 @@ class Notion:
         return progress
 
 
+async def todos_on(notion, page_id):
+    """The to-dos on a page, as (block id, text, checked), reading every
+    child (and the children of Sidecar's own heading when it filled one in)."""
+    out, cursor = [], None
+    while True:
+        data = await notion.call("GET", f"/blocks/{page_id}/children?page_size=100" + (f"&start_cursor={cursor}" if cursor else ""))
+        for b in data.get("results", []):
+            if b.get("type") == "to_do":
+                out.append((b["id"], plain(b["to_do"].get("rich_text")), bool(b["to_do"].get("checked"))))
+        if not data.get("has_more"):
+            return out
+        cursor = data.get("next_cursor")
+
+
 async def tick(notion, block_id, done):
     """Ticks (or unticks) one follow-up's to-do on its Notion page."""
     await notion.call("PATCH", f"/blocks/{block_id}", {"to_do": {"checked": bool(done)}})

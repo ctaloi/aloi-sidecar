@@ -1,7 +1,7 @@
 # Every app here carries the aloi- prefix: bare names get replaced by AUR
 # packages of the same name on update.
 pkgname=aloi-sidecar
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc='A live transcript of your meeting, and an agent to ask about it'
 arch=('x86_64' 'aarch64')

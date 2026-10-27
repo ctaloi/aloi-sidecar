@@ -91,6 +91,11 @@ async def append(request):
     return web.json_response({"results": results})
 
 
+async def children(request):
+    await record(request)
+    return web.json_response({"results": blocks.get(request.match_info["id"], []), "has_more": False})
+
+
 async def get_block(request):
     await record(request)
     bid = request.match_info["id"]
@@ -142,6 +147,7 @@ app.router.add_post("/pages", create)
 app.router.add_get("/pages/{id}", get_page)
 app.router.add_patch("/pages/{id}", update_page)
 app.router.add_patch("/blocks/{id}/children", append)
+app.router.add_get("/blocks/{id}/children", children)
 app.router.add_get("/blocks/{id}", get_block)
 app.router.add_patch("/blocks/{id}", update_block)
 app.router.add_get("/_log", get_log)
