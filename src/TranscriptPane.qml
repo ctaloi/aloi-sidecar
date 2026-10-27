@@ -22,6 +22,9 @@ Rectangle {
         flashTimer.restart()
     }
     property int flash: -1
+    // N: a line of Chris's own into the meeting on screen.
+    property bool noting: false
+    function startNote() { noting = true; noteField.text = ""; noteField.forceActiveFocus() }
     Timer { id: flashTimer; interval: 2200; onTriggered: pane.flash = -1 }
 
     ListView {
@@ -59,6 +62,8 @@ Rectangle {
             // A run of lines from the same side shows the name once.
             required property bool runStart
             readonly property bool sameAsAbove: !runStart
+            readonly property bool isNote: speaker === "Note"
+            readonly property bool isMark: speaker === "Mark"
             width: list.width
             height: body.implicitHeight + (sameAsAbove ? 4 : 12)
 
@@ -70,6 +75,18 @@ Rectangle {
                 color: ui.alpha(theme.accent, 0.14)
                 opacity: pane.flash === row.lineId ? 1 : 0
                 Behavior on opacity { NumberAnimation { duration: 400 } }
+            }
+            // A mark: a band across the moment.
+            Rectangle {
+                visible: row.isMark
+                anchors.fill: parent
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                anchors.topMargin: 3
+                anchors.bottomMargin: 1
+                radius: Math.min(4, theme.radius)
+                color: ui.alpha(theme.accent, 0.1)
+                Rectangle { width: 3; height: parent.height; color: theme.accent; radius: 1 }
             }
 
             Text {
@@ -87,9 +104,9 @@ Rectangle {
                 x: 86
                 y: body.y
                 width: 56
-                visible: !row.sameAsAbove
-                text: row.mine ? qsTr("Me") : qsTr("Them")
-                color: row.mine ? ui.me : ui.them
+                visible: !row.sameAsAbove || row.isMark
+                text: row.mine ? qsTr("Me") : row.isNote ? qsTr("Note") : row.isMark ? "⚑" : qsTr("Them")
+                color: row.mine ? ui.me : row.isNote || row.isMark ? theme.accent : ui.them
                 font.pixelSize: 13
                 font.bold: true
             }
@@ -99,8 +116,9 @@ Rectangle {
                 y: row.sameAsAbove ? 2 : 8
                 width: row.width - x - 22
                 text: row.text
-                color: ui.text
+                color: row.isMark ? theme.accent : ui.text
                 font.pixelSize: 14
+                font.italic: row.isNote
                 wrapMode: TextEdit.Wrap
                 readOnly: true
                 selectByMouse: true
@@ -179,8 +197,60 @@ Rectangle {
         }
     }
 
-    ActionButton {
+    // The note being typed, along the bottom.
+    Rectangle {
+        id: noteBar
+        anchors.left: parent.left
+        anchors.right: parent.right
         anchors.bottom: parent.bottom
+        height: pane.noting ? 52 : 0
+        visible: height > 0
+        clip: true
+        color: ui.panel
+        Behavior on height { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+        Rectangle { width: parent.width; height: 1; color: ui.line }
+        Row {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: 18
+            anchors.rightMargin: 18
+            spacing: 12
+            Text { text: qsTr("Note"); color: theme.accent; font.pixelSize: 13; font.bold: true; anchors.verticalCenter: parent.verticalCenter; width: 56 }
+            TextInput {
+                id: noteField
+                width: parent.width - 56 - hint.width - 24
+                anchors.verticalCenter: parent.verticalCenter
+                color: ui.text
+                font.pixelSize: 14
+                font.italic: true
+                selectByMouse: true
+                clip: true
+                onAccepted: { engine.addNote(engine.selected, text); pane.noting = false }
+                Keys.onEscapePressed: pane.noting = false
+                onActiveFocusChanged: if (!activeFocus && text === "") pane.noting = false
+                Text {
+                    visible: noteField.text === ""
+                    text: qsTr("Something nobody said out loud, like “check their contract end date”")
+                    color: ui.faint
+                    font: noteField.font
+                    width: parent.width
+                    elide: Text.ElideRight
+                }
+            }
+            Text {
+                id: hint
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.StyledText
+                text: "<font color='" + theme.accent + "'>enter</font> " + qsTr("adds") + "  <font color='" + theme.accent + "'>esc</font> " + qsTr("cancels")
+                color: ui.faint
+                font.pixelSize: 11
+            }
+        }
+    }
+
+    ActionButton {
+        anchors.bottom: noteBar.top
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottomMargin: 12
         visible: !pane.following && transcript.count > 0

@@ -44,6 +44,9 @@ END_AFTER = 120  # seconds after a call lets go of the mic before its meeting en
 KEY_FILE = Path.home() / ".config/aloi-sidecar/api-key"  # optional; else SDK defaults (ANTHROPIC_API_KEY etc.)
 RECOVER_WINDOW = 2 * 60 * 60  # a meeting left live by a crash comes back paused if its last line is this recent
 ME = "Chris"
+# Lines Chris adds himself, not speech: a typed note, and a mark on a moment
+# that mattered. They sit in the transcript so the agent and the wrap-up see them.
+OWN = ("Note", "Mark")
 
 INTERIM_EVERY = 1.5  # seconds between live-preview decodes
 INTERIM_TAIL = 8  # preview only the last N seconds of the utterance
@@ -605,6 +608,18 @@ class Sidecar:
             if q.qsize() < 1000:
                 q.put_nowait(data)
 
+    def add_note(self, m, kind, text=""):
+        """A note Chris typed, or a mark on the moment, into a meeting's
+        transcript: now for the meeting that's on, or at its end for one
+        that's over."""
+        t = time.time() if m is self.current else m.last_line_end()
+        seg = m.append({"speaker": kind, "start": t, "end": t, "text": text.strip() or "Marked this moment"})
+        if m is not self.current:
+            m.close()
+        self.broadcast(self.segment_event(seg, m.id))
+        self.announce(m)
+        return seg
+
     def segment_event(self, seg, meeting):
         return {"type": "segment", **seg, "meeting": meeting, "time": stamp(seg["start"])}
 
@@ -616,7 +631,7 @@ class Sidecar:
         if speaker == ME:
             # Speakers bleeding into the mic: the "Them" line may already be in,
             # or may still be decoding, so check now and again until the hold ends.
-            recent = [s for s in (self.current.segments[-8:] if self.current else []) if s["speaker"] != ME]
+            recent = [s for s in (self.current.segments[-8:] if self.current else []) if s["speaker"] not in (ME, *OWN)]
             if any(overlaps(seg, s) and similar(seg["text"], s["text"]) for s in recent):
                 self.broadcast({"type": "echo_dropped", "text": text})
                 return
@@ -926,6 +941,15 @@ async def send(request):
     return web.json_response(m.summary())
 
 
+async def note(request):
+    m = find(request)
+    b = await body(request)
+    kind = "Mark" if b.get("kind") == "mark" else "Note"
+    if kind == "Note" and not (b.get("text") or "").strip():
+        raise web.HTTPBadRequest(text="A note needs some text.")
+    return web.json_response(request.app["sidecar"].add_note(m, kind, b.get("text") or ""))
+
+
 async def get_settings(request):
     return web.json_response(request.app["sidecar"].settings)
 
@@ -976,6 +1000,7 @@ async def main():
     app.router.add_get("/meeting/{id}/notion", candidates)
     app.router.add_post("/meeting/{id}/notion", send)
     app.router.add_post("/ask", ask)
+    app.router.add_post("/meeting/{id}/note", note)
     app.router.add_get("/settings", get_settings)
     app.router.add_patch("/settings", set_settings)
     runner = web.AppRunner(app)

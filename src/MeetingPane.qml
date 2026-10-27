@@ -27,6 +27,7 @@ Rectangle {
     property string shownId: ""
 
     function rename() { if (has) { titleEdit.text = m.title; editing = true; titleEdit.forceActiveFocus(); titleEdit.selectAll() } }
+    function note() { if (has) { tab = "transcript"; Qt.callLater(transcriptView.startNote) } }
     function toggleTab() { if (over) tab = tab === "notes" ? "transcript" : "notes" }
     function showLine(id) { tab = "transcript"; Qt.callLater(() => transcriptView.showLine(id)) }
     function revertNotes() { wrapupView.revert() }
@@ -166,11 +167,28 @@ Rectangle {
                     onClicked: win.act("end", pane.m)
                 }
                 ActionButton {
+                    visible: pane.isCurrent
+                    text: qsTr("Mark")
+                    keys: "M"
+                    tip: qsTr("Flag this moment as one that matters")
+                    onClicked: win.markNow()
+                }
+                ActionButton {
+                    text: qsTr("Note")
+                    keys: "N"
+                    tip: qsTr("Type a line of your own into the transcript")
+                    onClicked: pane.note()
+                }
+                // Renaming and copying stay a key (or the ⋯ menu) away during a
+                // call, so the row keeps to what's needed mid-call.
+                ActionButton {
+                    visible: !pane.isCurrent
                     text: qsTr("Rename")
                     keys: "R"
                     onClicked: pane.rename()
                 }
                 ActionButton {
+                    visible: !pane.isCurrent
                     text: qsTr("Copy transcript")
                     keys: "shift+C"
                     enabled: transcript.count > 0

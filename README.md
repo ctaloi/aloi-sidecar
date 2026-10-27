@@ -73,6 +73,8 @@ The agent runs like Aloi Tix's: `claude -p` in
 | `Space` | Listen / pause (starts a meeting if none is on) |
 | `E` | End the meeting (Opus drafts its wrap-up) |
 | `Ctrl+N` | Start a new meeting |
+| `M` | Mark this moment as one that matters (highlighted in the wrap-up) |
+| `N` | Type a note into the transcript |
 | `R` | Rename the meeting on screen |
 | `T` | Notes / transcript |
 | `D` | Draft the wrap-up (again) |

@@ -221,12 +221,14 @@ void Engine::handleEvent(const QJsonObject &event) {
     const QString type = event.value("type").toString();
     if (type == "segment") {
         const QString meeting = event.value("meeting").toString();
-        if (meeting != m_current)
-            return;
         const auto line = lineFrom(event);
-        m_live << line;
-        if (m_selected == m_current)
-            m_transcript.append(line);
+        if (meeting == m_current) {
+            m_live << line;
+            if (m_selected == m_current)
+                m_transcript.append(line);
+        } else if (meeting == m_selected && !m_loading) {
+            m_transcript.append(line);  // a note added to a meeting that's over
+        }
     } else if (type == "interim") {
         const QString label = event.value("label").toString(), text = event.value("text").toString();
         for (int i = 0; i < m_interims.size(); ++i) {
@@ -542,6 +544,15 @@ QString Engine::meetingFolder(const QString &id) const {
     const QString root = qEnvironmentVariable("SIDECAR_MEETINGS",
         QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/aloi-sidecar/meetings");
     return root + "/" + id;
+}
+
+void Engine::addNote(const QString &id, const QString &text) {
+    if (!text.trimmed().isEmpty())
+        post(path(id, "/note"), QJsonObject{{"kind", "note"}, {"text", text.trimmed()}});
+}
+
+void Engine::mark(const QString &id) {
+    post(path(id, "/note"), QJsonObject{{"kind", "mark"}});
 }
 
 void Engine::setSetting(const QString &key, const QVariant &value) {

@@ -149,6 +149,9 @@ public:
     // Where a meeting's files are, for "Show files".
     Q_INVOKABLE QString meetingFolder(const QString &id) const;
     Q_INVOKABLE void setSetting(const QString &key, const QVariant &value);
+    // A note Chris types, or a mark on the moment, into a meeting's transcript.
+    Q_INVOKABLE void addNote(const QString &id, const QString &text);
+    Q_INVOKABLE void mark(const QString &id);
     // When the window closes: stop listening and wait (briefly) for the
     // engine to say so, so nothing is heard with the app closed.
     void stopListeningNow();

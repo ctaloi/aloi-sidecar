@@ -135,6 +135,14 @@ def main():
         status, _ = call(base, "POST", f"/meeting/{mid}/notion", {})
         check("a sent meeting can't be sent twice", status == 409)
 
+        # A note and a mark land in the transcript, at its end for a meeting that's over.
+        status, seg = call(base, "POST", f"/meeting/{mid}/note", {"kind": "note", "text": "check the contract end date"})
+        check("a note is a transcript line", status == 200 and seg["speaker"] == "Note" and seg["id"] == 1500, seg)
+        status, seg = call(base, "POST", f"/meeting/{mid}/note", {"kind": "mark"})
+        check("a mark is a transcript line", status == 200 and seg["speaker"] == "Mark", seg)
+        status, _ = call(base, "POST", f"/meeting/{mid}/note", {"kind": "note", "text": "  "})
+        check("an empty note is refused", status == 400)
+
         # Filling in a page someone else made: only empty properties, our part under its own heading.
         _, seeded = call(fake, "POST", "/_page", {"title": "Northwind (from elsewhere)"})
         other = "2026-10-26_120000"

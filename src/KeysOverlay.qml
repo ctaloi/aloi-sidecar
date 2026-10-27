@@ -15,6 +15,8 @@ Popup {
         ["Space", qsTr("Listen / pause (starts a meeting if none is on)")],
         ["E", qsTr("End the meeting; Opus drafts its wrap-up")],
         ["Ctrl+N", qsTr("Start a new meeting")],
+        ["M", qsTr("Mark this moment as one that matters")],
+        ["N", qsTr("Type a note into the transcript")],
         ["End", qsTr("Back to the live end of the transcript")],
         [qsTr("Meetings")],
         ["J / K", qsTr("Next / previous meeting")],

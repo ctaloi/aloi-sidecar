@@ -16,8 +16,10 @@ LINES = [
     ("Them", "And the front desk says some outbound calls show up as spam likely on cell phones."),
     ("Chris", "Okay, two things then. We'll schedule the number change for the night of the thirteenth."),
     ("Chris", "And I'll have the team look at the caller ID registration on your outbound numbers."),
+    ("Mark", "Marked this moment"),
     ("Them", "Perfect. Can you also send over pricing for two more conference phones?"),
     ("Chris", "Sure, I'll get that to you today."),
+    ("Note", "Check their contract end date before quoting"),
     ("Them", "One more thing, does the auto attendant need to change for the holiday hours?"),
 ]
 NOW = time.time()
@@ -199,6 +201,7 @@ app.router.add_post("/meeting/{id}/wrapup", ok)
 app.router.add_get("/meeting/{id}/notion", candidates)
 app.router.add_post("/meeting/{id}/notion", ok)
 app.router.add_post("/meeting/{id}/resume", ok)
+app.router.add_post("/meeting/{id}/note", ok)
 app.router.add_delete("/meeting/{id}", ok)
 app.router.add_patch("/settings", ok)
 app.router.add_post("/_call", set_call)

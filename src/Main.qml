@@ -43,6 +43,13 @@ ApplicationWindow {
     property bool listHidden: false
     readonly property bool listShown: !listHidden && width >= 1100
 
+    // M: flag the moment in the meeting that's on.
+    function markNow() {
+        if (engine.current === "") return
+        engine.mark(engine.current)
+        toast.show(qsTr("Marked. It's highlighted in the wrap-up."))
+    }
+
     function newMeeting() {
         if (engine.current === "") { engine.startMeeting(); return }
         confirm.ask({
@@ -225,6 +232,8 @@ ApplicationWindow {
     Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.running; onActivated: agent.stop() }
     Shortcut { sequence: "Y"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.approvals.length > 0; onActivated: agent.decide(agent.approvals[0].id, "once") }
     Shortcut { sequence: "N"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.approvals.length > 0; onActivated: agent.decide(agent.approvals[0].id, "deny") }
+    Shortcut { sequence: "N"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.approvals.length === 0 && win.shown.id !== undefined; onActivated: meetingPane.note() }
+    Shortcut { sequence: "M"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: win.markNow() }
     Shortcut {
         sequence: "Q"
         context: Qt.ApplicationShortcut
