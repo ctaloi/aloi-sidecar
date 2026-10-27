@@ -265,11 +265,13 @@ class Sidecar:
     def recover(self):
         """A meeting left live by a crash or a reboot comes back paused if it
         was recent, and is ended (at its last line) if it wasn't."""
+        self.interrupted = []
         for m in self.meetings.values():
             w = m.wrapup()
-            if w and w["state"] == "drafting":  # the engine stopped part way through
+            if w and w["state"] == "drafting":  # the engine stopped part way through: draft it again
                 w.update(state="failed", error="Drafting was interrupted. Try again.")
                 m.save_wrapup(w)
+                self.interrupted.append(m)
             if m.meta["state"] == "ended":
                 continue
             if self.current is None and time.time() - m.last_line_end() < RECOVER_WINDOW:
@@ -1506,6 +1508,8 @@ async def main():
     print(f"Aloi Sidecar engine on http://127.0.0.1:{PORT}", flush=True)
     if listen_now:
         await sidecar.set_listening(True)
+    for m in sidecar.interrupted:  # a restart part way through a draft picks it back up
+        sidecar.draft(m)
     jobs = [sidecar.flush_pending(), sidecar.levels(), sidecar.follow_calendar(), sidecar.follow_takeaways(),
             sidecar.watch_silence()]
     if calls.enabled():

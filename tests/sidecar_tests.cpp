@@ -20,6 +20,28 @@ private slots:
         return {{"id", id}, {"title", "Meeting " + id}, {"state", state}, {"started", started}, {"lines", 0}};
     }
 
+    // A streamed answer changes its own row in place; nothing above it is
+    // rebuilt, and only a different conversation resets the list.
+    void messageModelUpdatesInPlace() {
+        MessageModel model;
+        auto msg = [](const QString &role, const QString &text) { return QVariantMap{{"role", role}, {"text", text}}; };
+        QSignalSpy reset(&model, &QAbstractItemModel::modelReset);
+        QSignalSpy inserted(&model, &QAbstractItemModel::rowsInserted);
+        QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
+        model.sync({msg("you", "Q"), msg("agent", "A")});
+        QCOMPARE(model.rowCount(), 2);
+        QCOMPARE(inserted.count(), 1);
+        model.sync({msg("you", "Q"), msg("agent", "An")});
+        model.sync({msg("you", "Q"), msg("agent", "Answer")});
+        QCOMPARE(changed.count(), 2);
+        QCOMPARE(changed.last().at(0).value<QModelIndex>().row(), 1);
+        QCOMPARE(reset.count(), 0);
+        QCOMPARE(model.data(model.index(1), MessageModel::MessageRole).toMap().value("text").toString(), QString("Answer"));
+        model.sync({});
+        QCOMPARE(reset.count(), 1);
+        QCOMPARE(model.rowCount(), 0);
+    }
+
     void liveMeetingFromEvents() {
         Engine engine("http://127.0.0.1:1");
         engine.handleEvent({{"type", "meetings"}, {"meetings", QJsonArray{meeting("b", "live", 2000), meeting("a", "ended", 1000)}}});

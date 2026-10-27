@@ -68,6 +68,7 @@ Rectangle {
         model: transcript
         boundsBehavior: Flickable.StopAtBounds
         reuseItems: true
+        cacheBuffer: 3000
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
         // Stay on the live end as lines arrive, unless Chris scrolled up to read.

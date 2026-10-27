@@ -183,6 +183,16 @@ async def main():
                                                     {"kind": "ticket", "query": "INC-42", "why": "open?", "at": 6}])
     check("lookups gather without repeats", [x["query"] for x in merged] == ["Northwind Dental", "716 555 0100", "INC-42"])
 
+    # A restart part way through a draft picks it back up.
+    half = E.Meeting.create("Half drafted")
+    half.meta.update(state="ended", ended=500)
+    half._segments = []
+    half.append({"speaker": "Them", "start": 1, "end": 2, "text": "Hello."})
+    half.close(); half.save()
+    half.save_wrapup({"state": "drafting", "draft": None, "edited": None})
+    again = E.Sidecar()
+    check("an interrupted draft is lined up to draft again", [x.meta["title"] for x in again.interrupted] == ["Half drafted"])
+
     # Search finds what was said, in any meeting.
     found = app.search("thanks BYE")
     check("search finds a line by its words, any case", len(found) == 1 and found[0]["hits"][0]["text"] == "Thanks, bye.")

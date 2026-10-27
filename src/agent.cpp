@@ -24,6 +24,9 @@ Agent::Agent(Transcript *transcript, const QString &program, const QString &stat
       m_stateDirectory(stateDirectory.isEmpty() ? QDir::homePath() + "/.local/state/aloi-sidecar" : stateDirectory),
       m_approver(qEnvironmentVariable("SIDECAR_APPROVER", QCoreApplication::applicationFilePath())) {
     load();
+    // Every change to the conversation reaches the view's model, row by row.
+    connect(this, &Agent::messagesChanged, this, [this] { m_model.sync(messages()); });
+    m_model.sync(messages());
 }
 
 Agent::~Agent() {

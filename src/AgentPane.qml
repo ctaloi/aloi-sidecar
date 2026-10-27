@@ -49,8 +49,11 @@ Rectangle {
             topMargin: 16
             bottomMargin: 16
             spacing: 18
-            model: agent.messages
+            model: agent.messageModel
             visible: count > 0
+            // Every answer laid out, not estimated, so the scroll range
+            // doesn't shift as rows come into view.
+            cacheBuffer: 100000
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             // Follows the answer as it streams in only while you're at the
@@ -66,7 +69,8 @@ Rectangle {
 
             // ListView pins delegates to x: 0, so the margin goes inside a full-width item.
             delegate: Item {
-                required property var modelData
+                required property var entry
+                readonly property var modelData: entry
                 required property int index
                 width: list.width
                 height: message.implicitHeight

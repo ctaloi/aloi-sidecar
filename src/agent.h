@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QAbstractListModel>
 #include <QHash>
 #include <QJsonObject>
 #include <QObject>
@@ -8,6 +9,51 @@
 #include <functional>
 
 class Transcript;
+
+// The conversation as a list model, for the view. A streamed answer changes
+// only its own row, so the rows above it aren't rebuilt and re-measured with
+// every word, which is what made the view jump while an answer came in.
+class MessageModel : public QAbstractListModel {
+    Q_OBJECT
+public:
+    enum { MessageRole = Qt::UserRole + 1 };
+    using QAbstractListModel::QAbstractListModel;
+    int rowCount(const QModelIndex &parent = {}) const override { return parent.isValid() ? 0 : m_rows.size(); }
+    QVariant data(const QModelIndex &index, int role) const override {
+        return index.isValid() && role == MessageRole ? m_rows.value(index.row()) : QVariant();
+    }
+    QHash<int, QByteArray> roleNames() const override { return {{MessageRole, "entry"}}; }
+    // Brings the rows in line with the conversation: changed rows in place,
+    // new ones appended, and only a different conversation starts over.
+    void sync(const QVariantList &rows) {
+        const qsizetype common = std::min(rows.size(), m_rows.size());
+        bool sameStart = true;
+        for (qsizetype i = 0; i + 1 < common && sameStart; ++i)
+            sameStart = rows[i].toMap().value("role") == m_rows[i].toMap().value("role");
+        if (!sameStart || rows.size() < m_rows.size()) {
+            beginResetModel();
+            m_rows = rows;
+            endResetModel();
+            return;
+        }
+        for (qsizetype i = 0; i < common; ++i) {
+            if (rows[i] != m_rows[i]) {
+                m_rows[i] = rows[i];
+                emit dataChanged(index(int(i)), index(int(i)), {MessageRole});
+            }
+        }
+        if (rows.size() > m_rows.size()) {
+            beginInsertRows({}, int(m_rows.size()), int(rows.size() - 1));
+            for (qsizetype i = m_rows.size(); i < rows.size(); ++i)
+                m_rows.append(rows[i]);
+            endInsertRows();
+        }
+    }
+
+private:
+    QVariantList m_rows;
+};
+
 
 // A conversation with Claude about the meeting, through `claude -p`, with
 // every skill Chris has in Claude Code. Each meeting keeps its own session
@@ -25,6 +71,8 @@ class Agent : public QObject {
     // resets after that question, so the library is never searched by accident.
     Q_PROPERTY(bool wide READ wide WRITE setWide NOTIFY wideChanged)
     Q_PROPERTY(QVariantList messages READ messages NOTIFY messagesChanged)
+    // The same conversation, for a ListView: rows change in place.
+    Q_PROPERTY(MessageModel *messageModel READ messageModel CONSTANT)
     Q_PROPERTY(bool running READ running NOTIFY runningChanged)
     Q_PROPERTY(QString activity READ activity NOTIFY activityChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
@@ -39,6 +87,7 @@ public:
 
     QString meeting() const { return m_meeting; }
     QVariantList messages() const { return m_sessions.value(m_meeting).messages; }
+    MessageModel *messageModel() { return &m_model; }
     bool running() const { return m_process != nullptr; }
     QString activity() const { return running() ? m_activity : QString(); }
     QString error() const { return m_error; }
@@ -89,6 +138,7 @@ signals:
     void approvalRequested(const QString &command);
 
 private:
+    MessageModel m_model;
     bool m_wide = false;
     struct Pending {
         QString id, command, description, skill;
