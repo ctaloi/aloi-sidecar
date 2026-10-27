@@ -312,15 +312,15 @@ Rectangle {
                         implicitHeight: 30
                         text: qsTr("Email")
                         tip: qsTr("Write the follow-up email, saved to Outlook Drafts (W)")
-                        keys: root.width >= 700 ? "W" : ""
+                        keys: root.width >= 780 ? "W" : ""
                         onClicked: win.act("email", root.m)
                     }
                     ActionButton {
-                        visible: root.width >= 520
+                        visible: root.width >= 680
                         implicitHeight: 30
                         text: qsTr("Copy")
                         tip: qsTr("Copy as Markdown")
-                        keys: root.width >= 700 ? "C" : ""
+                        keys: root.width >= 780 ? "C" : ""
                         onClicked: win.act("copyNotes", root.m)
                     }
                 }

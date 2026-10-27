@@ -95,6 +95,10 @@ class Engine : public QObject {
     Q_PROPERTY(QVariantList followups READ followups NOTIFY followupsChanged)
     Q_PROPERTY(int followupsOpen READ followupsOpen NOTIFY stateChanged)
     Q_PROPERTY(bool syncing READ syncing NOTIFY followupsChanged)
+    // Meetings whose title or transcript has every word searched for, newest
+    // first: [{id, title (matched), count, hits: [{at, speaker, text, time}]}].
+    Q_PROPERTY(QVariantList searchResults READ searchResults NOTIFY searchChanged)
+    Q_PROPERTY(QString searched READ searched NOTIFY searchChanged)
 
 public:
     // url: the engine's address; empty uses SIDECAR_ENGINE or 127.0.0.1:8777.
@@ -121,6 +125,8 @@ public:
     bool candidatesLoading() const { return m_candidatesLoading; }
     QString candidatesError() const { return m_candidatesError; }
     QVariantList followups() const { return m_followups; }
+    QVariantList searchResults() const { return m_searchResults; }
+    QString searched() const { return m_searched; }
     int followupsOpen() const { return m_followupsOpen; }
     bool syncing() const { return m_syncing; }
 
@@ -168,6 +174,7 @@ public:
     Q_INVOKABLE void editEmail(const QString &id, const QVariantMap &changes);
     Q_INVOKABLE void saveEmail(const QString &id);
     Q_INVOKABLE void fetchFollowups();
+    Q_INVOKABLE void search(const QString &q);
     Q_INVOKABLE void setFollowupDone(const QString &meeting, int index, bool done);
     // Ticks made in Notion, brought back.
     Q_INVOKABLE void syncFollowups();
@@ -196,6 +203,7 @@ signals:
     void wrapupChanged();
     void candidatesChanged();
     void followupsChanged();
+    void searchChanged();
     // Something landed on the clipboard (what, for the toast).
     void copied(const QString &what);
 
@@ -238,6 +246,9 @@ private:
     bool m_candidatesLoading = false;
     QString m_candidatesError;
     QVariantList m_followups;
+    QVariantList m_searchResults;
+    QString m_searched;
+    QString m_searching;
     int m_followupsOpen = 0;
     bool m_syncing = false;
 };

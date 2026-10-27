@@ -183,6 +183,9 @@ int main(int argc, char *argv[]) {
     }
     shot("palette-typed", 300);
     QMetaObject::invokeMethod(palette, "close");
+    window->findChild<QObject *>("search")->setProperty("text", "port");
+    shot("search", 900);
+    window->findChild<QObject *>("search")->setProperty("text", "");
     window->setProperty("view", "followups");
     shot("followups", 900);
 

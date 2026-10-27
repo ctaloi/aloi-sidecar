@@ -10,6 +10,7 @@
 #include <QNetworkRequest>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QUrlQuery>
 
 #include "tools.h"
 
@@ -587,6 +588,31 @@ void Engine::fetchFollowups() {
             return;
         m_followups = QJsonDocument::fromJson(reply->readAll()).object().value("followups").toArray().toVariantList();
         emit followupsChanged();
+    });
+}
+
+void Engine::search(const QString &q) {
+    const QString query = q.trimmed();
+    m_searching = query;
+    if (query.size() < 2) {
+        m_searched.clear();
+        m_searchResults.clear();
+        emit searchChanged();
+        return;
+    }
+    QUrl url = m_url.resolved(QUrl("/search"));
+    QUrlQuery params;
+    params.addQueryItem("q", query);
+    url.setQuery(params);
+    QNetworkReply *reply = m_network.get(QNetworkRequest(url));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, query] {
+        reply->deleteLater();
+        // Typing outruns the answers; only the latest search counts.
+        if (reply->error() != QNetworkReply::NoError || query != m_searching)
+            return;
+        m_searched = query;
+        m_searchResults = QJsonDocument::fromJson(reply->readAll()).object().value("results").toArray().toVariantList();
+        emit searchChanged();
     });
 }
 

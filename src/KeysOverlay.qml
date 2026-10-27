@@ -27,7 +27,7 @@ Popup {
         ["Menu", qsTr("Everything for the meeting (or right-click it)")],
         ["Del", qsTr("Delete the meeting (to the trash folder)")],
         ["\\", qsTr("Show / hide the meetings list")],
-        ["Ctrl+F", qsTr("Search meetings")],
+        ["Ctrl+F", qsTr("Search what was said, in every meeting")],
         [qsTr("Wrap-up")],
         ["D", qsTr("Draft the wrap-up (again)")],
         ["S", qsTr("Send to Notion")],

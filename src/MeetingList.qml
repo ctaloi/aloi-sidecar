@@ -17,8 +17,28 @@ Rectangle {
         ["now", qsTr("Now")], ["wrap", qsTr("Needs wrap-up")], ["today", qsTr("Today")], ["yesterday", qsTr("Yesterday")],
         ["week", qsTr("This week")], ["earlier", qsTr("Earlier")]
     ]
+    // Two letters or more also search what was said, in every meeting; until
+    // the engine answers, titles alone are matched.
+    readonly property string query: filter.trim()
+    readonly property bool found: query.length >= 2 && engine.searched === query
+    onQueryChanged: searchTimer.restart()
+    Timer { id: searchTimer; interval: 160; onTriggered: engine.search(pane.query) }
+    function openFirst() {
+        const r = rows.find(r => !r.header)
+        if (r) win.openFrom(r.m.id, r.hits && r.hits.length ? r.hits[0].at : -1)
+    }
+
     // Headers and rows in one list, so each group can carry its count.
     readonly property var rows: {
+        if (found) {
+            const out = []
+            for (const r of engine.searchResults) {
+                const m = engine.meetings.find(x => x.id === r.id)
+                if (m) out.push({ header: false, m: m, hits: r.hits, more: r.count - r.hits.length })
+            }
+            if (out.length) out.unshift({ header: true, label: qsTr("Found in"), count: out.length })
+            return out
+        }
         const f = filter.trim().toLowerCase()
         const shown = engine.meetings.filter(m => f === "" || (m.title || "").toLowerCase().indexOf(f) >= 0)
         const out = []
@@ -61,8 +81,9 @@ Rectangle {
             readonly property var m: modelData.m || ({})
             readonly property bool current: !header && m.id === engine.selected
             readonly property bool live: !header && m.state !== "ended"
+            readonly property var hits: modelData.hits || []
             width: list.width
-            height: header ? 40 : 58
+            height: header ? 40 : 58 + (hits.length ? hits.length * 20 + 4 + (modelData.more > 0 ? 18 : 0) : 0)
 
             // A group: its name in small capitals and how many are in it.
             RowLayout {
@@ -104,11 +125,12 @@ Rectangle {
                 }
 
                 ColumnLayout {
-                    anchors.fill: parent
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.leftMargin: 16
                     anchors.rightMargin: 14
                     anchors.topMargin: 10
-                    anchors.bottomMargin: 10
                     spacing: 4
                     RowLayout {
                         Layout.fillWidth: true
@@ -165,9 +187,55 @@ Rectangle {
                             font.pixelSize: 11
                         }
                     }
+                    // Where the words were said; each opens the transcript there.
+                    Item { Layout.preferredHeight: 2; visible: row.hits.length > 0 }
+                    Repeater {
+                        model: row.hits
+                        delegate: Label {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 20
+                            verticalAlignment: Text.AlignVCenter
+                            textFormat: Text.StyledText
+                            elide: Text.ElideRight
+                            text: "<font color='" + ui.faint + "'>" + modelData.time.slice(0, 5) + "</font>  "
+                                  + pane.highlight(pane.around(modelData.text))
+                            color: hitHover.hovered ? ui.text : ui.muted
+                            font.pixelSize: 11
+                            HoverHandler { id: hitHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: win.openFrom(row.m.id, modelData.at) }
+                        }
+                    }
+                    Label {
+                        visible: row.modelData.more > 0
+                        text: qsTr("+%n more", "", row.modelData.more || 0)
+                        color: ui.faint
+                        font.pixelSize: 10
+                    }
                 }
             }
         }
+    }
+
+    // A long line cut to the part around the first word searched for.
+    function around(text) {
+        const w = query.toLowerCase().split(/\s+/)[0] || ""
+        const i = text.toLowerCase().indexOf(w)
+        return i > 30 ? "…" + text.slice(i - 24) : text
+    }
+    // The words searched for, in the accent; everything else escaped.
+    function highlight(text) {
+        const esc = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        const words = query.toLowerCase().split(/\s+/).filter(w => w)
+        let out = "", i = 0
+        const lower = text.toLowerCase()
+        while (i < text.length) {
+            let hit = null
+            for (const w of words) if (lower.startsWith(w, i) && (!hit || w.length > hit.length)) hit = w
+            if (hit) { out += "<font color='" + theme.accent + "'>" + esc(text.substr(i, hit.length)) + "</font>"; i += hit.length }
+            else { out += esc(text[i]); i++ }
+        }
+        return out
     }
 
     MeetingMenu { id: menu }
@@ -182,7 +250,7 @@ Rectangle {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
-            text: pane.filter !== "" ? qsTr("No meeting called that.") : qsTr("No meetings yet.")
+            text: pane.filter !== "" ? qsTr("Nothing said or titled “%1”.").arg(pane.query) : qsTr("No meetings yet.")
             color: ui.muted
             font.pixelSize: 13
         }

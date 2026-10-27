@@ -108,7 +108,7 @@ The agent runs like Aloi Tix's: `claude -p` in
 | `J` / `K` | Next / previous meeting |
 | `G` | Go to the meeting that's on now |
 | `\` | Show / hide the meetings list |
-| `Ctrl+F` | Search meetings |
+| `Ctrl+F` | Search what was said, in every meeting (Enter opens the first hit) |
 | `/` | Ask about the meeting on screen |
 | `A` | Hide or show the agent |
 | `1`–`4` | Ask a suggested question |

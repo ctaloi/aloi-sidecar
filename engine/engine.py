@@ -742,6 +742,24 @@ class Sidecar:
 
     # ---- follow-ups: what Chris has to do, across every meeting ----
 
+    def search(self, q, per=3, limit=40):
+        """Meetings whose title or transcript has every word of q, newest
+        first, each with its first few matching lines."""
+        words = [w for w in q.lower().split() if w]
+        if not words:
+            return []
+        out = []
+        for m in sorted(self.meetings.values(), key=lambda m: m.meta["started"], reverse=True):
+            title = all(w in m.meta["title"].lower() for w in words)
+            hits = [s for s in m.segments if all(w in s["text"].lower() for w in words)]
+            if title or hits:
+                out.append({"id": m.id, "title": title, "count": len(hits),
+                            "hits": [{"at": s.get("id", -1), "speaker": s["speaker"], "text": s["text"],
+                                      "time": stamp(s["start"])} for s in hits[:per]]})
+                if len(out) >= limit:
+                    break
+        return out
+
     def followups(self):
         out = []
         for m in self.meetings.values():
@@ -1227,6 +1245,11 @@ async def note(request):
     return web.json_response(request.app["sidecar"].add_note(m, kind, b.get("text") or ""))
 
 
+async def search(request):
+    q = request.query.get("q", "")
+    return web.json_response({"q": q, "results": request.app["sidecar"].search(q)})
+
+
 async def followups(request):
     return web.json_response({"followups": request.app["sidecar"].followups()})
 
@@ -1331,6 +1354,7 @@ async def main():
     app.router.add_put("/meeting/{id}/email", edit_email)
     app.router.add_post("/meeting/{id}/email/save", save_email)
     app.router.add_get("/followups", followups)
+    app.router.add_get("/search", search)
     app.router.add_post("/followups/done", set_followup)
     app.router.add_post("/followups/sync", sync_followups)
     app.router.add_get("/settings", get_settings)

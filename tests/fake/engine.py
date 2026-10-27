@@ -162,6 +162,20 @@ async def meeting(request):
     raise web.HTTPNotFound()
 
 
+async def search(request):
+    words = request.query.get("q", "").lower().split()
+    out = []
+    for m in meetings():
+        lines = segs(LINES, NOW - 600) if m["id"] == current_id else segs(PAST[int(m["id"].split("-")[1])][3], m["started"])
+        hits = [x for x in lines if all(w in x["text"].lower() for w in words)]
+        title = all(w in m["title"].lower() for w in words)
+        if words and (hits or title):
+            out.append({"id": m["id"], "title": title, "count": len(hits),
+                        "hits": [{"at": x["id"], "speaker": x["speaker"], "text": x["text"],
+                                  "time": time.strftime("%H:%M:%S", time.localtime(x["start"]))} for x in hits[:3]]})
+    return web.json_response({"results": out})
+
+
 async def listen(request):
     body = await request.json()
     state["listening"] = bool(body.get("on"))
@@ -239,6 +253,7 @@ app.router.add_delete("/meeting/{id}", ok)
 app.router.add_patch("/settings", ok)
 app.router.add_post("/_call", set_call)
 app.router.add_get("/followups", get_followups)
+app.router.add_get("/search", search)
 app.router.add_post("/followups/sync", sync_followups)
 app.router.add_post("/followups/done", ok)
 app.router.add_post("/meeting/{id}/email", ok)

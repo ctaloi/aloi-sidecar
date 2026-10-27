@@ -193,6 +193,11 @@ ApplicationWindow {
         target: engine
         function onCopied(what) { toast.show(what) }
     }
+    // Enter in the search box opens the first meeting found, at the line.
+    Connections {
+        target: topBar.search
+        function onAccepted() { win.view = "meetings"; meetingList.openFirst() }
+    }
 
     header: TopBar {
         id: topBar

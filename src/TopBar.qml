@@ -140,6 +140,7 @@ Rectangle {
                 Label { text: "⌕"; color: ui.faint; font.pixelSize: 14 }
                 TextInput {
                     id: field
+                    objectName: "search"
                     Layout.fillWidth: true
                     color: ui.text
                     font.pixelSize: 12
@@ -149,7 +150,7 @@ Rectangle {
                     Label {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: field.text === ""
-                        text: qsTr("Search meetings")
+                        text: qsTr("Search what was said")
                         color: ui.faint
                         font.pixelSize: 12
                     }

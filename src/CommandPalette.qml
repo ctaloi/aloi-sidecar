@@ -118,7 +118,7 @@ Popup {
         add("app", win.agentHidden ? qsTr("Show the agent") : qsTr("Hide the agent"), "A", () => win.agentHidden = !win.agentHidden)
         add("app", win.listHidden ? qsTr("Show the meeting list") : qsTr("Hide the meeting list"), "\\", () => win.listHidden = !win.listHidden)
         add("app", qsTr("New chat with the agent"), "ctrl+shift+K", () => agent.forget())
-        add("app", qsTr("Search meetings"), "ctrl+F", () => { win.listHidden = false; topBar.search.forceActiveFocus() })
+        add("app", qsTr("Search what was said, in every meeting"), "ctrl+F", () => { win.listHidden = false; topBar.search.forceActiveFocus() })
         add("app", qsTr("Every key"), "?", () => keys.open())
 
         const s = engine.settings

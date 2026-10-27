@@ -163,7 +163,8 @@ Rectangle {
                         if (pane.isCurrent)
                             out.push({ text: pane.live ? "● " + qsTr("Live %1").arg(Sidecar.elapsed(pane.m, pane.now)) : "● " + qsTr("Paused"),
                                        color: pane.live ? ui.live : ui.muted })
-                        out.push({ text: Sidecar.span(pane.m) + (pane.over ? " · " + Sidecar.length(pane.m, pane.now) : ""), color: ui.muted })
+                        out.push({ text: Sidecar.span(pane.m), color: ui.muted })
+                        if (pane.over) out.push({ text: Sidecar.length(pane.m, pane.now), color: ui.muted })
                         out.push({ text: qsTr("%n lines", "", pane.isCurrent ? transcript.count : (pane.m.lines || 0)), color: ui.faint })
                         const people = pane.m.people || []
                         if (people.length > 0)
@@ -181,7 +182,7 @@ Rectangle {
                         readonly property bool last: index === metaItems.count - 1
                         height: 22
                         verticalAlignment: Text.AlignVCenter
-                        text: modelData.text + (last ? "" : "   ·   ")
+                        text: modelData.text + (last ? "" : "  ·  ")
                         color: modelData.color
                         font.pixelSize: 12
                         HoverHandler { id: metaHover; enabled: !!modelData.tip }

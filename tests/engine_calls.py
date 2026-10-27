@@ -87,6 +87,12 @@ async def main():
     kept = [x for x in app.meetings.values() if x.meta["title"] == "Weekly sync"]
     check("and keeps nothing of it", len(kept) == 1)  # only the first one, which was heard and ended
 
+    # Search finds what was said, in any meeting.
+    found = app.search("thanks BYE")
+    check("search finds a line by its words, any case", len(found) == 1 and found[0]["hits"][0]["text"] == "Thanks, bye.")
+    check("search finds a meeting by its title", any(r["title"] for r in app.search("weekly")))
+    check("search with nothing finds nothing", app.search("  ") == [])
+
     # Turned off in settings: nothing starts.
     app.set_settings({"watch_calls": False})
     await app.call_ended("Teams")
