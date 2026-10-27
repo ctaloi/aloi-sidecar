@@ -23,6 +23,7 @@ import numpy as np
 import sherpa_onnx
 from aiohttp import web
 
+import agenda
 import calls
 import wrapup
 from notion import Notion, NotionError
@@ -36,7 +37,9 @@ PARAKEET = MODELS / "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
 MEETINGS = Path(os.environ.get("SIDECAR_MEETINGS", Path.home() / ".local/share/aloi-sidecar/meetings"))
 TRASH = MEETINGS.parent / "trash"  # deleted meetings go here, never straight to nothing
 SETTINGS = Path(os.environ.get("SIDECAR_SETTINGS", Path.home() / ".config/aloi-sidecar/settings.json"))
-DEFAULTS = {"watch_calls": True}
+DEFAULTS = {"watch_calls": True, "calendar_offers": True}
+SLACK_AFTER = 5 * 60  # a meeting's "about to start" offer stays up until five minutes in
+SWITCH_AFTER = 60  # seconds before a running meeting gives way to the next calendar meeting
 END_AFTER = 120  # seconds after a call lets go of the mic before its meeting ends by itself
 KEY_FILE = Path.home() / ".config/aloi-sidecar/api-key"  # optional; else SDK defaults (ANTHROPIC_API_KEY etc.)
 RECOVER_WINDOW = 2 * 60 * 60  # a meeting left live by a crash comes back paused if its last line is this recent
@@ -228,6 +231,8 @@ class Sidecar:
         self.settings = {**DEFAULTS, **(json.loads(SETTINGS.read_text()) if SETTINGS.exists() else {})}
         self.call = None  # {"app", "since"} while another app holds the mic
         self.prompt = None  # the notification task asking about the call
+        self.agenda = agenda.Calendar()
+        self.offered = set()  # calendar events already offered, so each is asked about once
         self.watch = calls.CallWatch(lambda: [c.pid for c in self.channels if c.pid],
                                      self.call_started, self.call_ended)
         self.ask_blocks = []  # frozen transcript blocks already sent to Claude
@@ -267,7 +272,14 @@ class Sidecar:
         return {"type": "state", "listening": self.listening,
                 "current": self.current.id if self.current else None,
                 "channels": [{"label": c.label, "speaker": c.speaker} for c in self.channels],
-                "call": self.call, "settings": self.settings}
+                "call": self.call, "settings": self.settings, "to_wrap_up": self.to_wrap_up()}
+
+    def to_wrap_up(self):
+        """Meetings from the last week still to wrap up, for the bar."""
+        week = time.time() - 7 * 86400
+        return sum(1 for m in self.meetings.values()
+                   if m.meta["state"] == "ended" and m.meta["started"] > week and not m.meta.get("skipped")
+                   and (m.meta.get("notion") or {}).get("state") != "sent" and m.lines() > 0)
 
     def set_settings(self, changes):
         for key in DEFAULTS:
@@ -306,17 +318,73 @@ class Sidecar:
         self.prompt = asyncio.create_task(coro) if coro else None
 
     async def ask_to_listen(self, app):
-        choice = await calls.notify(f"{app} is using your mic", "Listen to this call with Sidecar?",
+        event = self.agenda.happening()
+        choice = await calls.notify(f"{app} is using your mic",
+                                    f"Listen to “{event['subject']}” with Sidecar?" if event else "Listen to this call with Sidecar?",
                                     [("default", "Listen"), ("ignore", "Not now")])
         if choice == "default" and not self.listening:
             await self.start_meeting()
-            # Listening always shows: the window opens (or comes forward) with
-            # its pulsing pill, so nothing is ever heard with Sidecar out of sight.
+            await self.show_window()
+
+    async def show_window(self):
+        """Listening always shows: the window opens (or comes forward) with
+        its pulsing pill, so nothing is ever heard with Sidecar out of sight."""
+        try:
+            await asyncio.create_subprocess_exec("gtk-launch", "aloi-sidecar", stdout=asyncio.subprocess.DEVNULL,
+                                                 stderr=asyncio.subprocess.DEVNULL)
+        except FileNotFoundError:
+            pass
+
+    # ---- the calendar ----
+
+    async def follow_calendar(self):
+        """Keeps today's meetings fresh, offers to listen a couple of minutes
+        before each, and offers to switch when the next one begins while
+        another is still being heard."""
+        while True:
             try:
-                await asyncio.create_subprocess_exec("gtk-launch", "aloi-sidecar", stdout=asyncio.subprocess.DEVNULL,
-                                                     stderr=asyncio.subprocess.DEVNULL)
-            except FileNotFoundError:
-                pass
+                if self.agenda.due():
+                    await self.agenda.refresh()
+                now = time.time()
+                for e in self.agenda.starting(now):
+                    if e["id"] not in self.offered and not self.listening and self.settings["calendar_offers"]:
+                        self.offered.add(e["id"])
+                        self.notify(self.offer_meeting(e))
+                for e in self.agenda.begun(now):
+                    on = (self.current.meta.get("event") or {}).get("id") if self.current else None
+                    if self.listening and on != e["id"] and ("switch", e["id"]) not in self.offered:
+                        self.offered.add(("switch", e["id"]))
+                        self.notify(self.offer_switch(self.current, e))
+            except Exception as e:  # the calendar is a nicety; it never takes the engine down
+                print(f"calendar: {e}", file=sys.stderr, flush=True)
+            await asyncio.sleep(20)
+
+    async def offer_meeting(self, e):
+        minutes = max(1, round((e["t0"] - time.time()) / 60))
+        who = e.get("organizer") or ""
+        actions = ([("default", "Join and listen"), ("listen", "Just listen")] if e.get("joinUrl")
+                   else [("default", "Listen")]) + [("ignore", "Not now")]
+        choice = await calls.notify(f"{e['subject']} in {minutes} min",
+                                    (f"{who} · " if who else "") + "Sidecar can listen and take notes.",
+                                    actions, timeout=int(max(60, e["t0"] + SLACK_AFTER - time.time())))
+        if choice not in ("default", "listen") or self.listening:
+            return
+        if choice == "default" and e.get("joinUrl"):
+            await agenda.join(e["joinUrl"])
+        await self.start_meeting(event=agenda.event_meta(e))
+        await self.show_window()
+
+    async def offer_switch(self, m, e):
+        asked = time.time()
+        choice = await calls.notify(f"{e['subject']} is starting",
+                                    f"Switch from “{m.meta['title']}”? It switches by itself in a minute.",
+                                    [("default", "Switch"), ("keep", "Keep this meeting")], timeout=SWITCH_AFTER)
+        if choice == "keep":
+            return
+        if choice is None:
+            await asyncio.sleep(max(0, SWITCH_AFTER - (time.time() - asked)))
+        if self.current is m and self.listening:
+            await self.start_meeting(event=agenda.event_meta(e))
 
     async def ask_to_end(self, m, app):
         heard, asked = m.lines(), time.time()
@@ -333,12 +401,21 @@ class Sidecar:
             await self.end_meeting()
 
     async def start_meeting(self, title=None, event=None):
+        """Starts a meeting, ending the one that's on. With no title or
+        event, the calendar meeting that's on (or about to be) names it."""
         await self.end_meeting()
-        if self.prompt:  # a "Listen?" notification is answered by starting
+        # A "Listen?" notification is answered by starting; one doing the
+        # starting itself mustn't cancel itself.
+        if self.prompt and asyncio.current_task() is not self.prompt:
             self.notify(None)
+        event = agenda.normalize(event)
+        if not title and not event:
+            on = self.agenda.happening()
+            event = agenda.event_meta(on) if on else None
         if not title and not event and self.call and self.call["app"] in calls.CALL_APPS:
             title = f"{self.call['app']} call at {datetime.now():%-I:%M}"
         m = Meeting.create(title or (event or {}).get("subject") or ad_hoc_title(), event)
+        m.meta["people"] = agenda.people(event, ME)
         self.meetings[m.id] = m
         self.current = m
         self.ask_blocks, self.ask_sent = [], 0
@@ -907,7 +984,7 @@ async def main():
     print(f"Aloi Sidecar engine on http://127.0.0.1:{PORT}", flush=True)
     if listen_now:
         await sidecar.set_listening(True)
-    jobs = [sidecar.flush_pending(), sidecar.levels()]
+    jobs = [sidecar.flush_pending(), sidecar.levels(), sidecar.follow_calendar()]
     if calls.enabled():
         jobs.append(sidecar.watch.watch())
     await asyncio.gather(*jobs)

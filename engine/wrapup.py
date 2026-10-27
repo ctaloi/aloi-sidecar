@@ -60,7 +60,7 @@ def prompt(me, meta, options):
     if event.get("organizer"):
         about.append(f"Calendar organizer: {event['organizer']}")
     if meta.get("people"):
-        about.append("People: " + ", ".join(meta["people"]))
+        about.append("Invited (from the calendar): " + ", ".join(meta["people"][:20]))
     return f"""Write the wrap-up of a meeting {me} was in. The transcript is on stdin.
 
 {chr(10).join(about)}

@@ -120,11 +120,21 @@ Rectangle {
                     tone: ui.faint
                     text: qsTr("%n lines", "", pane.isCurrent ? transcript.count : (pane.m.lines || 0))
                 }
+                // The calendar meeting it is, and who was invited.
                 Chip {
                     visible: pane.has && !!pane.m.event
                     tone: ui.muted
                     glyph: "▦"
-                    text: qsTr("From your calendar")
+                    text: {
+                        const people = pane.m.people || []
+                        if (people.length === 0) return qsTr("From your calendar")
+                        return people.length === 1 ? qsTr("With %1").arg(people[0])
+                             : qsTr("With %1 +%2").arg(people[0]).arg(people.length - 1)
+                    }
+                    HoverHandler { id: peopleHover }
+                    ToolTip.visible: peopleHover.hovered && (pane.m.people || []).length > 1
+                    ToolTip.delay: 400
+                    ToolTip.text: (pane.m.people || []).join("\n")
                 }
                 StageChip { stage: pane.stage; m: pane.m }
                 Chip {

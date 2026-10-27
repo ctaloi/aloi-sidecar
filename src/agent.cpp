@@ -104,6 +104,10 @@ QString Agent::describe(const QVariantMap &m) {
     const QVariantMap event = m.value("event").toMap();
     if (!event.isEmpty() && !event.value("organizer").toString().isEmpty())
         out += QString(", organized by %1").arg(event.value("organizer").toString());
+    // Who was invited, so "Them" can be told apart by name.
+    const QStringList people = m.value("people").toStringList();
+    if (!people.isEmpty())
+        out += QString(". Invited: %1").arg(people.mid(0, 12).join(", ")) + (people.size() > 12 ? ", and others" : "");
     out += state == "ended" ? QStringLiteral(". It's over; Chris is going back over it.")
                             : QStringLiteral(". It's happening now.");
     return out;

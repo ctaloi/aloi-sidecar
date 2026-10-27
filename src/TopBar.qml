@@ -173,6 +173,12 @@ Rectangle {
                     on: engine.settings.watch_calls !== false
                     onTriggered: engine.setSetting("watch_calls", !(engine.settings.watch_calls !== false))
                 }
+                MenuRow {
+                    text: qsTr("Offer to listen before calendar meetings")
+                    setting: true
+                    on: engine.settings.calendar_offers !== false
+                    onTriggered: engine.setSetting("calendar_offers", !(engine.settings.calendar_offers !== false))
+                }
                 MenuLine {}
                 MenuRow { text: qsTr("Show the meetings folder"); onTriggered: Qt.openUrlExternally("file://" + engine.meetingFolder("")) }
                 MenuRow { text: qsTr("Show the trash folder"); onTriggered: Qt.openUrlExternally("file://" + engine.meetingFolder("").replace(/meetings\/$/, "trash")) }

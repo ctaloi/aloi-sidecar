@@ -80,7 +80,8 @@ def main():
     procs = [subprocess.Popen([PY, str(ROOT / "tests/fake/notion.py"), str(notion_port)])]
     env = {**os.environ, "SIDECAR_PORT": str(engine_port), "SIDECAR_MEETINGS": str(meetings),
            "SIDECAR_NOTION_API": f"http://127.0.0.1:{notion_port}", "SIDECAR_NOTION_TOKEN": "test",
-           "SIDECAR_WRAPUP_CLAUDE": str(ROOT / "tests/fake/claude-wrapup"), "SIDECAR_CALL_WATCH": "0"}
+           "SIDECAR_WRAPUP_CLAUDE": str(ROOT / "tests/fake/claude-wrapup"), "SIDECAR_CALL_WATCH": "0",
+           "SIDECAR_CALENDAR": "", "SIDECAR_SETTINGS": str(tmp / "settings.json")}
     procs.append(subprocess.Popen([PY, str(ROOT / "engine/engine.py")], env=env, cwd=ROOT / "engine"))
     base, fake = f"http://127.0.0.1:{engine_port}", f"http://127.0.0.1:{notion_port}"
     try:
