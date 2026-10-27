@@ -8,6 +8,7 @@ recorders and notifications are stand-ins.
 """
 import asyncio
 import os
+import time
 import sys
 import tempfile
 from pathlib import Path
@@ -67,6 +68,21 @@ async def main():
     await app.prompt
     check("the call ending ends the meeting by itself", app.current is None and m.meta["state"] == "ended")
 
+    # The other side still talking after the mic lets go (a mute, a headset
+    # switch): the call isn't over, so it keeps going.
+    answers[:] = [None]
+    await app.call_started("Teams")
+    await app.prompt
+    m4 = app.current
+    answers[:] = [None]
+    await app.call_ended("Teams")
+    await asyncio.sleep(0.05)
+    m4.append({"speaker": "Them", "start": time.time(), "end": time.time() + 1, "text": "Sorry, I was on mute."})
+    await asyncio.sleep(0.3)
+    check("someone still talking keeps it going", app.current is m4 and app.listening)
+    await app.prompt
+    check("and it ends once they've gone quiet", app.current is None)
+
     # Not now on the end notification keeps it going.
     answers[:] = [None]
     await app.call_started("Teams")
@@ -80,12 +96,12 @@ async def main():
     await app.end_meeting()
 
     # Not now on the start notification throws the recording away.
+    before = set(app.meetings)
     answers[:] = ["discard"]
     await app.call_started("Teams")
     await app.prompt
     check("Not now on a new call stops it", app.current is None and not app.listening)
-    kept = [x for x in app.meetings.values() if x.meta["title"] == "Weekly sync"]
-    check("and keeps nothing of it", len(kept) == 1)  # only the first one, which was heard and ended
+    check("and keeps nothing of it", set(app.meetings) == before)
 
     # Search finds what was said, in any meeting.
     found = app.search("thanks BYE")

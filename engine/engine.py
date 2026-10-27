@@ -448,11 +448,21 @@ class Sidecar:
                                     [("default", "End now"), ("keep", "Not now")], timeout=END_AFTER)
         if choice == "keep":
             return
-        if choice is None:  # dismissed or timed out: the half minute still runs its course
+        if choice is None:
+            # Dismissed or timed out: the half minute still runs its course,
+            # and again for as long as the other side is still being heard,
+            # since a mute or a headset switch can look like the call ending.
             await asyncio.sleep(max(0, END_AFTER - (time.time() - asked)))
+            while self.current is m and self.listening and not self.call and self.heard_them_since(m, asked):
+                asked = time.time()
+                await asyncio.sleep(END_AFTER)
         if self.current is not m or self.call or not self.listening:
             return  # something else happened meanwhile: another call, a pause, or it ended already
         await self.end_meeting()
+
+    @staticmethod
+    def heard_them_since(m, t):
+        return any(s["speaker"] not in (ME, *OWN) and s["start"] >= t for s in m.segments[-20:])
 
     async def start_meeting(self, title=None, event=None):
         """Starts a meeting, ending the one that's on. With no title or
