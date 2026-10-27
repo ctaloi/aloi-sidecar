@@ -66,6 +66,8 @@ def main():
           meta["subject"] == "Northwind weekly" and abs(meta["start"] - (now - 120)) < 2 and meta["joinUrl"].startswith("https://"))
     check("people leave out Chris", agenda.people(meta, "Chris") == ["Amy Reed"])
     check("normalizing twice changes nothing", agenda.normalize(agenda.normalize(events[1])) == agenda.normalize(events[1]))
+    check("a meeting already had isn't the next call in its slot", cal.happening(now, used={"b"}) is None or cal.happening(now, used={"b"})["id"] != "b")
+    check("nor is it matched from a window", cal.matching("Northwind Weekly", used={"b"}) is None)
     check("a Teams window names its meeting, matched to the calendar",
           cal.matching("Northwind Weekly")["id"] == "b")
     check("a meeting far off in the day isn't matched", cal.matching("Late call") is None)

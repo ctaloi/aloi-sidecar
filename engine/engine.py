@@ -486,7 +486,9 @@ class Sidecar:
         seen = {}
         if not title and not event:
             seen = await calls.context() if self.call else {}
-            on = self.agenda.matching(seen.get("title")) or self.agenda.happening()
+            # A calendar meeting a finished recording already had is done with.
+            used = {(m.meta.get("event") or {}).get("id") for m in self.meetings.values() if m.meta["state"] == "ended"}
+            on = self.agenda.matching(seen.get("title"), used=used) or self.agenda.happening(used=used)
             event = agenda.event_meta(on) if on else None
         if not title and not event and seen.get("title"):
             title = seen["title"]

@@ -84,10 +84,12 @@ class Calendar:
     def due(self):
         return self.program and time.time() - self.fetched > REFRESH
 
-    def happening(self, t=None):
-        """The meeting a call starting now most likely is."""
+    def happening(self, t=None, used=()):
+        """The meeting a call starting now most likely is. Meetings in used
+        were already had (an earlier call ended under that name) and aren't
+        it: a second call in the same slot is a different conversation."""
         t = t or time.time()
-        on = [e for e in self.events if e["t0"] - SLACK <= t < e["t1"]]
+        on = [e for e in self.events if e["t0"] - SLACK <= t < e["t1"] and e["id"] not in used]
         # One under way wins, unless it's nearly over (then the call is
         # more likely the next one); otherwise the one about to start.
         running = [e for e in on if e["t0"] <= t and e["t1"] - t > SLACK]
@@ -95,14 +97,14 @@ class Calendar:
             return max(running, key=lambda e: e["t0"])
         return min(on, key=lambda e: abs(e["t0"] - t)) if on else None
 
-    def matching(self, name, t=None):
+    def matching(self, name, t=None, used=()):
         """Today's meeting a call app's window names, if one's near enough in
         time: a call can start early or run into the next slot."""
         if not name:
             return None
         t = t or time.time()
         key = name.lower()
-        near = [e for e in self.events if e["t0"] - 30 * 60 <= t < e["t1"] + 15 * 60]
+        near = [e for e in self.events if e["t0"] - 30 * 60 <= t < e["t1"] + 15 * 60 and e["id"] not in used]
         scored = [(difflib.SequenceMatcher(None, key, e["subject"].lower()).ratio()
                    + (0.5 if key in e["subject"].lower() or e["subject"].lower() in key else 0), e) for e in near]
         scored = [x for x in scored if x[0] >= 0.6]
