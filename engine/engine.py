@@ -893,6 +893,37 @@ class Sidecar:
                 self.edit_wrapup(m, doc, tick=False)
                 self.broadcast({"type": "followups"})
 
+    def brief(self, m, keep=3, days=90):
+        """What Sidecar already knows going into a meeting, from meetings
+        before it: the same series (same calendar subject) or the same
+        people. Their gist, what Chris still owes from them, and what the
+        others said they'd do. No model call: it's only what's on file."""
+        def norm(t):
+            return " ".join((t or "").lower().split())
+        subject = norm((m.meta.get("event") or {}).get("subject"))
+        people = {norm(p) for p in (m.meta.get("people") or []) if p}
+        related = []
+        for o in self.meetings.values():
+            if o is m or o.meta["state"] != "ended" or o.meta["started"] >= m.meta["started"] \
+                    or o.meta["started"] < m.meta["started"] - days * 86400 or not o.notes():
+                continue
+            same = subject and norm((o.meta.get("event") or {}).get("subject") or o.meta["title"]) == subject
+            shared = sorted(p for p in (o.meta.get("people") or []) if norm(p) in people)
+            if same or shared:
+                related.append((o, bool(same), shared))
+        related.sort(key=lambda r: r[0].meta["started"], reverse=True)
+        related = related[:keep]
+        out = {"related": [], "mine": [], "theirs": []}
+        for o, same, shared in related:
+            notes = o.notes()
+            out["related"].append({"id": o.id, "title": o.meta["title"], "started": o.meta["started"],
+                                   "tldr": notes.get("tldr", ""), "series": same, "shared": shared})
+            out["mine"] += [{"meeting": o.id, "index": i, "text": it["text"], "due": it.get("due", "")}
+                            for i, it in enumerate(notes.get("mine", [])) if it.get("text") and not it.get("done")]
+            out["theirs"] += [{"meeting": o.id, "who": it.get("who", ""), "text": it["text"], "due": it.get("due", "")}
+                              for it in notes.get("theirs", []) if it.get("text")]
+        return out
+
     def remove_followup(self, m, index):
         """Takes a follow-up out of the meeting's wrap-up altogether (not done:
         gone), and off its Notion page."""
@@ -1320,7 +1351,8 @@ async def delete(request):
 
 async def get_wrapup(request):
     m = find(request)
-    return web.json_response({"meeting": m.summary(), "wrapup": m.wrapup(), "takeaways": m.takeaways()})
+    return web.json_response({"meeting": m.summary(), "wrapup": m.wrapup(), "takeaways": m.takeaways(),
+                              "brief": request.app["sidecar"].brief(m)})
 
 
 async def draft(request):

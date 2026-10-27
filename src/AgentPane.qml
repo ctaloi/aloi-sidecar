@@ -144,7 +144,8 @@ Rectangle {
         Item {
             Layout.fillWidth: true
             implicitHeight: intro.implicitHeight + 36
-            visible: agent.messages.length === 0
+            // Only while there's nothing better to show.
+            visible: agent.messages.length === 0 && !(engine.brief.related || []).length && !engine.takeaways.updated
             Column {
                 id: intro
                 anchors.left: parent.left
@@ -240,6 +241,15 @@ Rectangle {
             wrapMode: Text.Wrap
         }
 
+        BriefCard {
+            Layout.fillWidth: true
+            Layout.leftMargin: 14
+            Layout.rightMargin: 14
+            Layout.topMargin: 6
+            // Going in, before the first question; the answers take over after.
+            visible: related.length > 0 && agent.messages.length === 0
+            onAsk: prompt => pane.ask(prompt)
+        }
         TakeawaysCard {
             Layout.fillWidth: true
             Layout.leftMargin: 14

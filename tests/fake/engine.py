@@ -211,7 +211,12 @@ TAKEAWAYS = {"updated": NOW - 50, "lines": 9,
 
 async def get_wrapup(request):
     mid = request.match_info["id"]
-    return web.json_response({"wrapup": wrapups.get(mid), "takeaways": TAKEAWAYS if mid == current_id else None})
+    brief = {"related": [{"id": "past-1", "title": "Harbor Logistics, porting review", "started": NOW - 26 * 3600,
+                          "tldr": "Four numbers left to port, all on the old carrier; Dana escalates the second stuck one.",
+                          "series": False, "shared": ["Dana Park"]}],
+             "mine": [{"meeting": "past-1", "index": 0, "text": "Chase the stuck Lumen port with the carrier", "due": "this afternoon"}],
+             "theirs": [{"meeting": "past-1", "who": "Dana", "text": "Escalate the second stuck port", "due": "tomorrow"}]} if mid == current_id else {}
+    return web.json_response({"wrapup": wrapups.get(mid), "takeaways": TAKEAWAYS if mid == current_id else None, "brief": brief})
 
 
 async def put_wrapup(request):

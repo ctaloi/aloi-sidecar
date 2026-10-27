@@ -441,9 +441,10 @@ void Engine::fetchWrapup(const QString &id) {
         m_wrapupFetch->disconnect(this);
         m_wrapupFetch->abort();
     }
-    if (!m_wrapup.isEmpty() || !m_takeaways.isEmpty()) {
+    if (!m_wrapup.isEmpty() || !m_takeaways.isEmpty() || !m_brief.isEmpty()) {
         m_wrapup.clear();
         m_takeaways.clear();
+        m_brief.clear();
         emit wrapupChanged();
     }
     if (id.isEmpty())
@@ -459,6 +460,7 @@ void Engine::fetchWrapup(const QString &id) {
         const QJsonObject body = QJsonDocument::fromJson(reply->readAll()).object();
         m_wrapup = body.value("wrapup").toObject().toVariantMap();
         m_takeaways = body.value("takeaways").toObject().toVariantMap();
+        m_brief = body.value("brief").toObject().toVariantMap();
         emit wrapupChanged();
     });
 }

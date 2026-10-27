@@ -183,6 +183,17 @@ async def main():
                                                     {"kind": "ticket", "query": "INC-42", "why": "open?", "at": 6}])
     check("lookups gather without repeats", [x["query"] for x in merged] == ["Northwind Dental", "716 555 0100", "INC-42"])
 
+    # Going in: what's on file from earlier meetings with the same people.
+    nxt = E.Meeting.create("Dialer follow-up")
+    nxt.meta.update(state="ended", started=1000, ended=1100, people=["Greg", "Someone new"])
+    app.meetings[nxt.id] = nxt
+    b = app.brief(nxt)
+    check("the brief finds the earlier meeting with the same people", [r["title"] for r in b["related"]] == ["Dialer review"] and b["related"][0]["shared"] == ["Greg"])
+    check("and what's still owed from it", [i["text"] for i in b["mine"]] == ["x"])
+    alone = E.Meeting.create("Unrelated")
+    alone.meta.update(state="ended", started=1000, ended=1100, people=["Nobody"])
+    check("a meeting with new people has no brief", app.brief(alone)["related"] == [])
+
     # A restart part way through a draft picks it back up.
     half = E.Meeting.create("Half drafted")
     half.meta.update(state="ended", ended=500)
