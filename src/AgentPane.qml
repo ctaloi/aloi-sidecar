@@ -295,10 +295,17 @@ Rectangle {
                 id: field
                 Layout.fillWidth: true
                 enabled: pane.ready
-                placeholderText: agent.running ? qsTr("Answering…") : pane.over ? qsTr("Ask about this meeting") : qsTr("Ask about the call")
+                placeholderText: agent.running ? qsTr("Answering…") : agent.wide ? qsTr("Ask across all your meetings")
+                               : pane.over ? qsTr("Ask about this meeting") : qsTr("Ask about the call")
                 Material.roundedScale: theme.radius
                 font.pixelSize: 14
                 onAccepted: pane.ask(text)
+                placeholderTextColor: agent.wide ? theme.accent : ui.faint
+                Keys.onPressed: event => {
+                    if (event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier) && text === "") {
+                        agent.wide = !agent.wide; event.accepted = true
+                    }
+                }
                 Keys.onEscapePressed: {
                     if (agent.running) agent.stop()
                     else focus = false
@@ -311,12 +318,17 @@ Rectangle {
                 onClicked: agent.running ? agent.stop() : pane.ask(field.text)
             }
         }
-        // The keys that matter here, while you're in the box.
-        Text {
+        // The keys that matter here, while you're in the box, and which
+        // meetings the next question is about.
+        RowLayout {
             Layout.fillWidth: true
             Layout.leftMargin: 16
+            Layout.rightMargin: 14
             Layout.topMargin: 6
             Layout.bottomMargin: 12
+            spacing: 8
+        Text {
+            Layout.fillWidth: true
             textFormat: Text.StyledText
             color: ui.faint
             font.pixelSize: 11
@@ -326,6 +338,19 @@ Rectangle {
                     ? k("enter") + " " + qsTr("asks") + "   " + k("esc") + " " + (agent.running ? qsTr("stops") : qsTr("leaves"))
                     : k("/") + " " + qsTr("asks") + "   " + k("1–4") + " " + qsTr("suggested questions")
             }
+        }
+        Chip {
+            text: agent.wide ? qsTr("All meetings") : qsTr("This meeting")
+            tone: agent.wide ? theme.accent : ui.faint
+            filled: agent.wide
+            glyph: agent.wide ? "◎" : "○"
+            HoverHandler { id: scopeHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: agent.wide = !agent.wide }
+            ToolTip.visible: scopeHover.hovered
+            ToolTip.delay: 400
+            ToolTip.text: agent.wide ? qsTr("The next question searches every meeting (ctrl+A switches back)")
+                                     : qsTr("Ask the next question across every meeting (ctrl+A)")
+        }
         }
     }
 }

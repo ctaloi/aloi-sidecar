@@ -10,6 +10,8 @@
 #include <QJsonDocument>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QStandardPaths>
+#include <QStandardPaths>
 #include <QUuid>
 
 #include "engine.h"
@@ -217,8 +219,16 @@ QStringList Agent::arguments(const QString &sessionId, bool resume) const {
     const QString work = QDir::homePath() + "/Work";
     if (QFileInfo(work).isDir())
         args << "--add-dir" << work;
+    // Every meeting, readable, for the questions Chris asks across them.
+    if (QFileInfo(meetingsDir()).isDir())
+        args << "--add-dir" << meetingsDir();
     args << "--allowedTools";
     return args + allowedTools();
+}
+
+QString Agent::meetingsDir() {
+    return qEnvironmentVariable("SIDECAR_MEETINGS",
+        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/aloi-sidecar/meetings");
 }
 
 QString Agent::prompt(const QString &question, bool firstOfSession) const {
@@ -230,6 +240,13 @@ QString Agent::prompt(const QString &question, bool firstOfSession) const {
               + "<transcript>\n" + lines + "\n</transcript>\n\n";
     else if (firstOfSession)
         out += QStringLiteral("Nothing has been said in the meeting yet.\n\n");
+    if (m_wide)
+        out += QString("This question is about all of Chris's meetings, not only this one. They're in %1, a folder "
+                       "per meeting: meta.json (title, started and ended as Unix times, people), transcript.jsonl "
+                       "(one line said per row: speaker, start, text) and, once it's over, wrapup.json (\"edited\" "
+                       "if Chris changed it, else \"draft\": summary, follow-ups, decisions). Search them with Grep "
+                       "and Read, and say which meeting (title and day) each part of the answer comes from.\n\n")
+                   .arg(meetingsDir());
     return out + "Chris asks: " + question;
 }
 
@@ -252,6 +269,7 @@ void Agent::ask(const QString &question) {
     const QString text = prompt(q, !resume);
     // If the old session is gone, the question goes to a new one with the whole meeting.
     m_retryPrompt = resume ? prompt(q, true) : QString();
+    setWide(false);  // one question at a time goes across every meeting
     if (!resume)
         session.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     session.sentThrough = m_transcript ? m_transcript->lastId() : -1;

@@ -21,6 +21,9 @@ class Transcript;
 class Agent : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString meeting READ meeting NOTIFY meetingChanged)
+    // The next question goes across every meeting, not only this one. It
+    // resets after that question, so the library is never searched by accident.
+    Q_PROPERTY(bool wide READ wide WRITE setWide NOTIFY wideChanged)
     Q_PROPERTY(QVariantList messages READ messages NOTIFY messagesChanged)
     Q_PROPERTY(bool running READ running NOTIFY runningChanged)
     Q_PROPERTY(QString activity READ activity NOTIFY activityChanged)
@@ -56,6 +59,10 @@ public:
     // Cadle", when, whether it's live or over).
     Q_INVOKABLE void setMeeting(const QString &meeting, const QString &about = {});
     Q_INVOKABLE void ask(const QString &question);
+    bool wide() const { return m_wide; }
+    void setWide(bool on) { if (m_wide != on) { m_wide = on; emit wideChanged(); } }
+    // Where every meeting's folder is, for questions across them.
+    static QString meetingsDir();
     Q_INVOKABLE void stop();
     // Start this meeting's conversation over.
     Q_INVOKABLE void forget();
@@ -72,6 +79,7 @@ public:
     QStringList arguments(const QString &sessionId, bool resume) const;
 
 signals:
+    void wideChanged();
     void meetingChanged();
     void messagesChanged();
     void runningChanged();
@@ -81,6 +89,7 @@ signals:
     void approvalRequested(const QString &command);
 
 private:
+    bool m_wide = false;
     struct Pending {
         QString id, command, description, skill;
         Answer answer;

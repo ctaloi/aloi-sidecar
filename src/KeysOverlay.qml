@@ -38,6 +38,7 @@ Popup {
         [qsTr("Agent")],
         ["/", qsTr("Ask about the meeting on screen")],
         ["1 – 4", qsTr("Ask a suggested question")],
+        ["Ctrl+A", qsTr("Next question across all meetings (in the ask box)")],
         ["Y / N", qsTr("Allow / deny what the agent wants to run")],
         ["Esc", qsTr("Stop the agent, leave a text box")],
         ["Ctrl+Shift+K", qsTr("New chat with the agent")],

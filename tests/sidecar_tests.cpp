@@ -135,6 +135,23 @@ private slots:
         QVERIFY(first.endsWith("Chris asks: What do I owe?"));
     }
 
+    void wideQuestionsSearchEveryMeeting() {
+        QTemporaryDir state, meetings;
+        qputenv("SIDECAR_MEETINGS", meetings.path().toUtf8());
+        Engine engine("http://127.0.0.1:1");
+        Agent agent(engine.transcript(), "/bin/true", state.path());
+        agent.setMeeting("m", "Meeting: \"Test\"");
+        QVERIFY(!agent.prompt("Anything?", true).contains(meetings.path()));
+        agent.setWide(true);
+        const QString wide = agent.prompt("When did Amy mention pricing?", true);
+        QVERIFY(wide.contains(meetings.path()));
+        QVERIFY(wide.endsWith("Chris asks: When did Amy mention pricing?"));
+        // Every meeting is readable to the agent.
+        const QStringList args = agent.arguments("abc", false);
+        QVERIFY(args.contains(meetings.path()));
+        qunsetenv("SIDECAR_MEETINGS");
+    }
+
     void argumentsStayReadOnly() {
         QTemporaryDir state;
         Agent agent(nullptr, "/bin/true", state.path());

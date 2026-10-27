@@ -109,6 +109,7 @@ The agent runs like Aloi Tix's: `claude -p` in
 | `Ctrl+F` | Search meetings |
 | `/` | Ask about the meeting on screen |
 | `1`–`4` | Ask a suggested question |
+| `Ctrl+A` | (in the ask box) The next question goes across all meetings |
 | `Esc` | Stop the agent, leave the ask box |
 | `Y` / `N` | Allow / deny what the agent wants to run |
 | `End` | Back to the live end of the transcript |
