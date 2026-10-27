@@ -16,6 +16,7 @@
         <file>WrapupPane.qml</file>
         <file>FollowupsPane.qml</file>
         <file>TakeawaysCard.qml</file>
+        <file>EmailSheet.qml</file>
         <file>SideMenu.qml</file>
         <file>MenuRow.qml</file>
         <file>MenuLine.qml</file>

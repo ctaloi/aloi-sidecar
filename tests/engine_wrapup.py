@@ -81,7 +81,8 @@ def main():
     env = {**os.environ, "SIDECAR_PORT": str(engine_port), "SIDECAR_MEETINGS": str(meetings),
            "SIDECAR_NOTION_API": f"http://127.0.0.1:{notion_port}", "SIDECAR_NOTION_TOKEN": "test",
            "SIDECAR_WRAPUP_CLAUDE": str(ROOT / "tests/fake/claude-wrapup"), "SIDECAR_CALL_WATCH": "0",
-           "SIDECAR_CALENDAR": "", "SIDECAR_SETTINGS": str(tmp / "settings.json")}
+           "SIDECAR_CALENDAR": "", "SIDECAR_SETTINGS": str(tmp / "settings.json"),
+           "SIDECAR_VMAIL": str(ROOT / "tests/fake/vmail"), "FAKE_VMAIL_OUT": str(tmp / "vmail.txt")}
     procs.append(subprocess.Popen([PY, str(ROOT / "engine/engine.py")], env=env, cwd=ROOT / "engine"))
     base, fake = f"http://127.0.0.1:{engine_port}", f"http://127.0.0.1:{notion_port}"
     try:
@@ -163,6 +164,22 @@ def main():
         check("a mark is a transcript line", status == 200 and seg["speaker"] == "Mark", seg)
         status, _ = call(base, "POST", f"/meeting/{mid}/note", {"kind": "note", "text": "  "})
         check("an empty note is refused", status == 400)
+
+        # The follow-up email: written, edited, saved to Drafts through vmail.
+        status, _ = call(base, "POST", f"/meeting/{mid}/email")
+        check("email writing starts", status == 200, _)
+        def email_state(want):
+            _, w = call(base, "GET", f"/meeting/{mid}/wrapup")
+            e = w["wrapup"].get("email") or {}
+            return e if e.get("state") == want else None
+        e = wait("email", lambda: email_state("ready") or email_state("failed"))
+        check("an email is written", e["state"] == "ready" and e["subject"] == "Cutover next steps", e)
+        call(base, "PUT", f"/meeting/{mid}/email", {"to": ["amy@northwind.example"], "body": "Edited body"})
+        call(base, "POST", f"/meeting/{mid}/email/save")
+        e = wait("saved", lambda: email_state("saved"))
+        made = (tmp / "vmail.txt").read_text()
+        check("vmail makes a draft with the edits", "draft new" in made and "amy@northwind.example" in made
+              and "Edited body" in made and "--send" not in made, made)
 
         # Filling in a page someone else made: only empty properties, our part under its own heading.
         _, seeded = call(fake, "POST", "/_page", {"title": "Northwind (from elsewhere)"})

@@ -98,6 +98,7 @@ The agent runs like Aloi Tix's: `claude -p` in
 | `D` | Draft the wrap-up (again) |
 | `S` | Send to Notion |
 | `O` | Open it in Notion |
+| `W` | Write the follow-up email, saved to Outlook Drafts (never sent) |
 | `C` / `Shift+C` | Copy the wrap-up as Markdown / the transcript |
 | `X` | No wrap-up needed (or needed after all) |
 | `Menu` / `Shift+F10` | Everything for the meeting (or right-click it) |

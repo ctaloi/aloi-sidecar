@@ -567,6 +567,18 @@ void Engine::mark(const QString &id) {
     post(path(id, "/note"), QJsonObject{{"kind", "mark"}});
 }
 
+void Engine::writeEmail(const QString &id) {
+    post(path(id, "/email"), {});
+}
+
+void Engine::editEmail(const QString &id, const QVariantMap &changes) {
+    post(path(id, "/email"), QJsonObject::fromVariantMap(changes), "PUT");
+}
+
+void Engine::saveEmail(const QString &id) {
+    post(path(id, "/email/save"), {});
+}
+
 void Engine::fetchFollowups() {
     QNetworkReply *reply = m_network.get(QNetworkRequest(m_url.resolved(QUrl("/followups"))));
     connect(reply, &QNetworkReply::finished, this, [this, reply] {

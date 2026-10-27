@@ -44,6 +44,13 @@ SideMenu {
         enabled: menu.hasNotes && menu.stage !== "sending"
         onTriggered: win.act("send", menu.m)
     }
+    MenuRow {
+        text: qsTr("Write the follow-up email…")
+        keys: "W"
+        visible: !menu.isCurrent
+        enabled: menu.m.wrapup === "ready"
+        onTriggered: win.act("email", menu.m)
+    }
     MenuRow { text: qsTr("Open in Notion"); keys: "O"; visible: menu.stage === "sent"; onTriggered: win.act("notion", menu.m) }
     MenuRow {
         text: qsTr("Go back to Opus's draft…")

@@ -163,6 +163,10 @@ public:
     // A note Chris types, or a mark on the moment, into a meeting's transcript.
     Q_INVOKABLE void addNote(const QString &id, const QString &text);
     Q_INVOKABLE void mark(const QString &id);
+    // The follow-up email: written by Opus, edited here, saved to Outlook Drafts by vmail.
+    Q_INVOKABLE void writeEmail(const QString &id);
+    Q_INVOKABLE void editEmail(const QString &id, const QVariantMap &changes);
+    Q_INVOKABLE void saveEmail(const QString &id);
     Q_INVOKABLE void fetchFollowups();
     Q_INVOKABLE void setFollowupDone(const QString &meeting, int index, bool done);
     // Ticks made in Notion, brought back.

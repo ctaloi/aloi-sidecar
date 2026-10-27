@@ -286,6 +286,13 @@ Rectangle {
                         onClicked: win.act("notion", root.m)
                     }
                     ActionButton {
+                        visible: root.width >= 560
+                        text: root.width >= 760 ? qsTr("Email") : "✉"
+                        tip: qsTr("Write the follow-up email, saved to Outlook Drafts (W)")
+                        keys: root.width >= 760 ? "W" : ""
+                        onClicked: win.act("email", root.m)
+                    }
+                    ActionButton {
                         visible: root.width >= 640
                         text: qsTr("Copy")
                         tip: qsTr("Copy as Markdown")

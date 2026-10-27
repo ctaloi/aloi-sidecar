@@ -35,7 +35,7 @@ ApplicationWindow {
 
     readonly property bool typing: activeFocusItem !== null
         && (activeFocusItem instanceof TextInput || (activeFocusItem instanceof TextEdit && !activeFocusItem.readOnly))
-    readonly property bool overlayOpen: keys.visible || confirm.visible || sendSheet.visible
+    readonly property bool overlayOpen: keys.visible || confirm.visible || sendSheet.visible || emailSheet.visible
     readonly property bool idle: !typing && !overlayOpen
     readonly property var shown: engine.selectedMeeting
     readonly property string stage: Sidecar.stage(shown)
@@ -133,6 +133,11 @@ ApplicationWindow {
                 run: () => { if (id === engine.selected) meetingPane.revertNotes(); else engine.saveWrapup(id, {}) }
             })
             break
+        case "email":
+            if (!m.wrapup || m.wrapup !== "ready") { engine.select(id); toast.show(qsTr("Draft the wrap-up first (D)")); return }
+            engine.select(id)
+            Qt.callLater(() => emailSheet.open(m))
+            break
         case "notion":
             if (m.notion && m.notion.url) Qt.openUrlExternally(m.notion.url)
             break
@@ -220,6 +225,7 @@ ApplicationWindow {
     KeysOverlay { id: keys; objectName: "keys" }
     Toast { id: toast }
     SendSheet { id: sendSheet; objectName: "sendSheet"; anchors.fill: parent; z: 40 }
+    EmailSheet { id: emailSheet; objectName: "emailSheet"; anchors.fill: parent; z: 41 }
     ConfirmOverlay { id: confirm; anchors.fill: parent; z: 45 }
 
     Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.connected; onActivated: engine.toggleListening() }
@@ -237,6 +243,7 @@ ApplicationWindow {
     Shortcut { sequence: "T"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.toggleTab() }
     Shortcut { sequence: "D"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("draft", win.shown) }
     Shortcut { sequence: "S"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.act("send", win.shown) }
+    Shortcut { sequence: "W"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("email", win.shown) }
     Shortcut { sequence: "O"; context: Qt.ApplicationShortcut; enabled: win.idle && win.stage === "sent"; onActivated: win.act("notion", win.shown) }
     Shortcut { sequence: "C"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("copyNotes", win.shown) }
     Shortcut { sequence: "Shift+C"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.act("copyTranscript", win.shown) }

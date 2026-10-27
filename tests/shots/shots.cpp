@@ -146,6 +146,10 @@ int main(int argc, char *argv[]) {
         QGuiApplication::sendEvent(window, &esc);
         wait(200);
     }
+    QMetaObject::invokeMethod(window, "act", Q_ARG(QVariant, "email"), Q_ARG(QVariant, engine.selectedMeeting()));
+    shot("email", 700);
+    QMetaObject::invokeMethod(window->findChild<QObject *>("emailSheet"), "close");
+    wait(200);
     QMetaObject::invokeMethod(window, "act", Q_ARG(QVariant, "send"), Q_ARG(QVariant, engine.selectedMeeting()));
     shot("send", 700);
     QKeyEvent esc(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);

@@ -25,6 +25,7 @@ from aiohttp import web
 
 import agenda
 import calls
+import mailer
 import takeaways
 import wrapup
 import notion
@@ -547,6 +548,37 @@ class Sidecar:
             w["state"] = "ready"
         m.save_wrapup(w)
         self.announce_wrapup(m)
+
+    # ---- the follow-up email ----
+
+    def set_email(self, m, **changes):
+        w = dict(m.wrapup() or {"state": "ready", "draft": None, "edited": None})
+        w["email"] = {**(w.get("email") or {}), **changes}
+        m.save_wrapup(w)
+        self.announce_wrapup(m)
+
+    def write_email(self, m):
+        if not m.notes() or (m.wrapup().get("email") or {}).get("state") == "writing":
+            return False
+        self.set_email(m, state="writing", error=None, to=mailer.recipients(m.meta), cc=[])
+        asyncio.create_task(self._write_email(m))
+        return True
+
+    async def _write_email(self, m):
+        try:
+            mail = await mailer.write(m.meta, m.notes())
+            self.set_email(m, state="ready", subject=mail["subject"], body=mail["body"], written=time.time())
+        except Exception as e:
+            self.set_email(m, state="failed", error=str(e) or type(e).__name__)
+
+    async def save_email(self, m):
+        e = (m.wrapup() or {}).get("email") or {}
+        self.set_email(m, state="saving", error=None)
+        try:
+            await mailer.save_draft(e.get("to") or [], e.get("cc") or [], e.get("subject", ""), e.get("body", ""))
+            self.set_email(m, state="saved", saved=time.time())
+        except Exception as err:
+            self.set_email(m, state="ready", error=str(err) or type(err).__name__)
 
     def send(self, m, target=None):
         """Starts filing the meeting in Notion in the background."""
@@ -1128,6 +1160,30 @@ async def sync_followups(request):
     return web.json_response({"changed": changed, "followups": app.followups()})
 
 
+async def write_email(request):
+    m = find(request)
+    if not request.app["sidecar"].write_email(m):
+        raise web.HTTPConflict(text="Draft the wrap-up first, or it's already writing.")
+    return web.json_response({"ok": True})
+
+
+async def edit_email(request):
+    m = find(request)
+    b = await body(request)
+    changes = {k: b[k] for k in ("to", "cc", "subject", "body") if k in b}
+    request.app["sidecar"].set_email(m, **changes)
+    return web.json_response({"ok": True})
+
+
+async def save_email(request):
+    m = find(request)
+    e = (m.wrapup() or {}).get("email") or {}
+    if e.get("state") not in ("ready", "saved") or not e.get("body"):
+        raise web.HTTPConflict(text="There's no email to save yet.")
+    asyncio.create_task(request.app["sidecar"].save_email(m))
+    return web.json_response({"ok": True})
+
+
 async def get_settings(request):
     return web.json_response(request.app["sidecar"].settings)
 
@@ -1179,6 +1235,9 @@ async def main():
     app.router.add_post("/meeting/{id}/notion", send)
     app.router.add_post("/ask", ask)
     app.router.add_post("/meeting/{id}/note", note)
+    app.router.add_post("/meeting/{id}/email", write_email)
+    app.router.add_put("/meeting/{id}/email", edit_email)
+    app.router.add_post("/meeting/{id}/email/save", save_email)
     app.router.add_get("/followups", followups)
     app.router.add_post("/followups/done", set_followup)
     app.router.add_post("/followups/sync", sync_followups)

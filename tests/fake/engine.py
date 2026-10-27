@@ -51,7 +51,9 @@ WRAPUP = {
     "questions": [{"text": "Do the stuck ports need a new LOA?", "due": "", "at": 0}],
     "met_with": ["Internal"], "tags": ["Operations", "VoIP"], "format": "Video"}
 wrapups = {
-    "past-0": {"state": "ready", "error": None, "draft": WRAPUP, "edited": None, "drafted": NOW - 3 * 3600 + 40 * 60},
+    "past-0": {"state": "ready", "error": None, "draft": WRAPUP, "edited": None, "drafted": NOW - 3 * 3600 + 40 * 60,
+               "email": {"state": "ready", "to": ["dana@harbor.example", "ops@harbor.example"], "subject": "Ports and the softphone beta",
+                         "body": "Hey all -\n\nThanks for the time today! Quick recap:\n- Six ports left, two stuck with the losing carrier\n- Softphone build goes to beta Thursday\n\nNext steps:\n- Me: chase the Lumen port this afternoon\n- Dana: escalate the second stuck port tomorrow\n\nOpen question: do the stuck ports need a new LOA?\n\nChris"}},
     "past-1": {"state": "ready", "error": None, "draft": {**WRAPUP, "title": "Harbor Logistics Porting Review"}, "edited": None,
                "drafted": NOW - 25 * 3600},
     "past-2": {"state": "drafting", "error": None, "draft": None, "edited": None, "started": NOW - 42},
@@ -239,4 +241,7 @@ app.router.add_post("/_call", set_call)
 app.router.add_get("/followups", get_followups)
 app.router.add_post("/followups/sync", sync_followups)
 app.router.add_post("/followups/done", ok)
+app.router.add_post("/meeting/{id}/email", ok)
+app.router.add_put("/meeting/{id}/email", ok)
+app.router.add_post("/meeting/{id}/email/save", ok)
 web.run_app(app, host="127.0.0.1", port=PORT, print=None)

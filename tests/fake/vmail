@@ -1,0 +1,4 @@
+#!/bin/sh
+# A stand-in for vmail: records the draft it was asked to make.
+{ printf '%s\n' "$*"; cat; } > "${FAKE_VMAIL_OUT:-/dev/null}"
+printf '%s\n' '{"id":"draft-1"}'

@@ -7,6 +7,11 @@ if [ -n "${FAKE_WRAPUP_FAIL:-}" ]; then
   printf '%s\n' '{"type":"result","is_error":true,"result":"Claude is overloaded right now."}'
   exit 0
 fi
+case "$*" in
+  *"follow-up email"*)
+    printf '%s\n' '{"type":"result","is_error":false,"result":"","structured_output":{"subject":"Cutover next steps","body":"Hey all -\n\nThanks for the time today!\n\nChris"}}'
+    exit 0 ;;
+esac
 cat <<'JSON'
 {"type":"result","subtype":"success","is_error":false,"result":"","structured_output":{
  "title":"Northwind Dental Office Cutover",

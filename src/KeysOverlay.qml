@@ -32,6 +32,7 @@ Popup {
         ["D", qsTr("Draft the wrap-up (again)")],
         ["S", qsTr("Send to Notion")],
         ["O", qsTr("Open it in Notion")],
+        ["W", qsTr("Write the follow-up email (to Outlook Drafts)")],
         ["C / Shift+C", qsTr("Copy the wrap-up / the transcript")],
         ["X", qsTr("No wrap-up needed (or needed after all)")],
         [qsTr("Agent")],
