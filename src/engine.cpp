@@ -282,11 +282,13 @@ void Engine::handleEvent(const QJsonObject &event) {
             m_live.clear();
         const QVariantMap call = event.value("call").toObject().toVariantMap();
         const QVariantMap settings = event.value("settings").toObject().toVariantMap();
-        if (on != m_listening || newMeeting || call != m_call || settings != m_settings) {
+        const int open = event.value("followups_open").toInt();
+        if (on != m_listening || newMeeting || call != m_call || settings != m_settings || open != m_followupsOpen) {
             m_listening = on;
             m_current = current;
             m_call = call;
             m_settings = settings;
+            m_followupsOpen = open;
             emit stateChanged();
         }
         // A new meeting comes on screen, unless Chris is reading another one.
@@ -300,6 +302,8 @@ void Engine::handleEvent(const QJsonObject &event) {
             m_wrapup = event.value("wrapup").toObject().toVariantMap();
             emit wrapupChanged();
         }
+    } else if (type == "followups") {
+        fetchFollowups();
     } else if (type == "echo_dropped") {
         ++m_echoes;
         emit echoesChanged();
@@ -553,6 +557,50 @@ void Engine::addNote(const QString &id, const QString &text) {
 
 void Engine::mark(const QString &id) {
     post(path(id, "/note"), QJsonObject{{"kind", "mark"}});
+}
+
+void Engine::fetchFollowups() {
+    QNetworkReply *reply = m_network.get(QNetworkRequest(m_url.resolved(QUrl("/followups"))));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError)
+            return;
+        m_followups = QJsonDocument::fromJson(reply->readAll()).object().value("followups").toArray().toVariantList();
+        emit followupsChanged();
+    });
+}
+
+void Engine::setFollowupDone(const QString &meeting, int index, bool done) {
+    // Ticked on screen straight away; the engine's answer confirms it.
+    for (auto &v : m_followups) {
+        QVariantMap f = v.toMap();
+        if (f.value("meeting").toString() == meeting && f.value("index").toInt() == index) {
+            f["done"] = done;
+            v = f;
+        }
+    }
+    emit followupsChanged();
+    post("/followups/done", QJsonObject{{"meeting", meeting}, {"index", index}, {"done", done}});
+}
+
+void Engine::syncFollowups() {
+    if (m_syncing)
+        return;
+    m_syncing = true;
+    emit followupsChanged();
+    QNetworkRequest request(m_url.resolved(QUrl("/followups/sync")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    QNetworkReply *reply = m_network.post(request, QByteArray("{}"));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        m_syncing = false;
+        const QJsonObject body = QJsonDocument::fromJson(reply->readAll()).object();
+        if (body.contains("error"))
+            setError(body.value("error").toString());
+        else if (body.contains("followups"))
+            m_followups = body.value("followups").toArray().toVariantList();
+        emit followupsChanged();
+    });
 }
 
 void Engine::setSetting(const QString &key, const QVariant &value) {

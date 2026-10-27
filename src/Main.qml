@@ -39,6 +39,13 @@ ApplicationWindow {
     readonly property bool idle: !typing && !overlayOpen
     readonly property var shown: engine.selectedMeeting
     readonly property string stage: Sidecar.stage(shown)
+    // Meetings, or every follow-up across them (F).
+    property string view: "meetings"
+    function openFrom(id, at) {
+        view = "meetings"
+        engine.select(id)
+        if (at >= 0) meetingPane.showLineWhenLoaded(at)
+    }
     // The list folds away by hand (\), or by itself when there isn't room for three columns.
     property bool listHidden: false
     readonly property bool listShown: !listHidden && width >= 1100
@@ -178,9 +185,16 @@ ApplicationWindow {
         anchors.fill: parent
         spacing: 0
 
+        FollowupsPane {
+            visible: win.view === "followups"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            now: win.now
+            onOpenMeeting: (id, at) => win.openFrom(id, at)
+        }
         MeetingList {
             id: meetingList
-            visible: win.listShown
+            visible: win.listShown && win.view === "meetings"
             Layout.preferredWidth: 320
             Layout.fillHeight: true
             filter: topBar.search.text
@@ -189,6 +203,7 @@ ApplicationWindow {
         MeetingPane {
             id: meetingPane
             objectName: "meetingPane"
+            visible: win.view === "meetings"
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumWidth: 300
@@ -218,6 +233,7 @@ ApplicationWindow {
     Shortcut { sequence: "\\"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.listHidden = !win.listHidden }
     Shortcut { sequence: "R"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.rename() }
     Shortcut { sequence: "E"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: win.act("end", engine.meetingById(engine.current)) }
+    Shortcut { sequence: "F"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.view = win.view === "followups" ? "meetings" : "followups" }
     Shortcut { sequence: "T"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.toggleTab() }
     Shortcut { sequence: "D"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("draft", win.shown) }
     Shortcut { sequence: "S"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.act("send", win.shown) }

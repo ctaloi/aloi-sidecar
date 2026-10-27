@@ -162,6 +162,11 @@ int main(int argc, char *argv[]) {
     shot("call", 900);
     QMetaObject::invokeMethod(window->findChild<QObject *>("keys"), "open");
     shot("keys", 400);
+    QKeyEvent escKeys(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QGuiApplication::sendEvent(window, &escKeys);
+    QMetaObject::invokeMethod(window->findChild<QObject *>("keys"), "close");
+    window->setProperty("view", "followups");
+    shot("followups", 900);
 
     std::printf("%s: %d lines, %lld messages, %d warnings\n", qPrintable(size), engine.transcript()->count(),
                 static_cast<long long>(agent.messages().size()), warnings);

@@ -135,6 +135,27 @@ def main():
         status, _ = call(base, "POST", f"/meeting/{mid}/notion", {})
         check("a sent meeting can't be sent twice", status == 409)
 
+        # Follow-ups: each knows its to-do on the page; ticking one ticks it in Notion, and back.
+        _, w = call(base, "GET", f"/meeting/{mid}/wrapup")
+        mine = w["wrapup"]["edited"]["mine"]
+        check("follow-ups know their Notion to-do", mine and all(i.get("notion") for i in mine), mine)
+        _, fl = call(base, "GET", "/followups")
+        ours = [f for f in fl["followups"] if f["meeting"] == mid]
+        check("follow-ups are listed, in Notion", len(ours) == len(mine) and all(f["inNotion"] for f in ours), ours)
+        call(base, "POST", "/followups/done", {"meeting": mid, "index": 0, "done": True})
+        block = mine[0]["notion"]
+        def ticked():
+            _, b = call(fake, "GET", f"/blocks/{block}")
+            return b.get("to_do", {}).get("checked") is True
+        wait("tick in Notion", ticked, 10)
+        check("ticking in Sidecar ticks the Notion to-do", ticked())
+        call(fake, "PATCH", f"/blocks/{block}", {"to_do": {"checked": False}})
+        _, synced = call(base, "POST", "/followups/sync", {})
+        first = [f for f in synced["followups"] if f["meeting"] == mid and f["index"] == 0][0]
+        check("unticking in Notion comes back", synced["changed"] == 1 and first["done"] is False, synced)
+        status, st = call(base, "GET", "/status")
+        check("the open count is in the state", st["followups_open"] >= 1, st)
+
         # A note and a mark land in the transcript, at its end for a meeting that's over.
         status, seg = call(base, "POST", f"/meeting/{mid}/note", {"kind": "note", "text": "check the contract end date"})
         check("a note is a transcript line", status == 200 and seg["speaker"] == "Note" and seg["id"] == 1500, seg)

@@ -26,6 +26,7 @@ from aiohttp import web
 import agenda
 import calls
 import wrapup
+import notion
 from notion import Notion, NotionError
 
 RATE = 16000
@@ -275,7 +276,8 @@ class Sidecar:
         return {"type": "state", "listening": self.listening,
                 "current": self.current.id if self.current else None,
                 "channels": [{"label": c.label, "speaker": c.speaker} for c in self.channels],
-                "call": self.call, "settings": self.settings, "to_wrap_up": self.to_wrap_up()}
+                "call": self.call, "settings": self.settings, "to_wrap_up": self.to_wrap_up(),
+                "followups_open": self.open_followups()}
 
     def to_wrap_up(self):
         """Meetings from the last week still to wrap up, for the bar."""
@@ -547,13 +549,80 @@ class Sidecar:
 
     async def _send(self, m, target, save):
         try:
-            await self.notion.send(m.meta, m.notes(), m.segments, target, save)
+            progress = await self.notion.send(m.meta, m.notes(), m.segments, target, save)
+            # Each follow-up remembers its to-do on the page, so ticking it off
+            # in Sidecar ticks it off in Notion too.
+            if progress.get("todos"):
+                doc = json.loads(json.dumps(m.notes()))
+                for i, block_id in progress["todos"].items():
+                    if int(i) < len(doc["mine"]):
+                        doc["mine"][int(i)]["notion"] = block_id
+                self.edit_wrapup(m, doc)
         except Exception as e:
             progress = dict(m.meta.get("notion") or {})
             progress.update(state="failed", error=str(e) or type(e).__name__)
             save(progress)
         finally:
             self.sending.pop(m.id, None)
+
+    # ---- follow-ups: what Chris has to do, across every meeting ----
+
+    def followups(self):
+        out = []
+        for m in self.meetings.values():
+            notes = m.notes()
+            if not notes or m.meta.get("skipped"):
+                continue
+            sent = (m.meta.get("notion") or {}).get("state") == "sent"
+            for i, item in enumerate(notes.get("mine", [])):
+                if not (item.get("text") or "").strip():
+                    continue
+                out.append({"meeting": m.id, "title": m.meta["title"], "started": m.meta["started"], "index": i,
+                            "text": item["text"], "due": item.get("due", ""), "at": item.get("at", -1),
+                            "done": bool(item.get("done")), "doneAt": item.get("done_at"),
+                            "inNotion": sent and bool(item.get("notion")), "syncError": item.get("sync_error")})
+        return sorted(out, key=lambda f: (f["started"], f["index"]))
+
+    def open_followups(self):
+        return sum(1 for f in self.followups() if not f["done"])
+
+    def set_done(self, m, index, done, from_notion=False):
+        """Ticks a follow-up off (or back on) in the meeting's wrap-up, and on
+        its Notion page unless that's where the tick came from."""
+        doc = json.loads(json.dumps(m.notes()))
+        item = doc["mine"][index]
+        item["done"] = bool(done)
+        item["done_at"] = time.time() if done else None
+        item.pop("sync_error", None)
+        self.edit_wrapup(m, doc)
+        self.broadcast({"type": "followups"})
+        self.broadcast(self.state())
+        if item.get("notion") and not from_notion:
+            asyncio.create_task(self._tick(m, index, item["notion"], done))
+
+    async def _tick(self, m, index, block_id, done):
+        try:
+            await notion.tick(self.notion, block_id, done)
+        except Exception as e:
+            doc = json.loads(json.dumps(m.notes()))
+            if index < len(doc["mine"]) and doc["mine"][index].get("notion") == block_id:
+                doc["mine"][index]["sync_error"] = str(e) or "Couldn't reach Notion"
+                self.edit_wrapup(m, doc)
+                self.broadcast({"type": "followups"})
+
+    async def pull_ticks(self):
+        """Ticks made in Notion come back to Sidecar."""
+        changed = 0
+        for f in self.followups():
+            if not f["inNotion"]:
+                continue
+            m = self.meetings[f["meeting"]]
+            block_id = m.notes()["mine"][f["index"]].get("notion")
+            state = await notion.ticked(self.notion, block_id)
+            if state is not None and state != f["done"]:
+                self.set_done(m, f["index"], state, from_notion=True)
+                changed += 1
+        return changed
 
     def update_meeting(self, m, changes):
         for key in ("title", "people", "skipped"):
@@ -950,6 +1019,31 @@ async def note(request):
     return web.json_response(request.app["sidecar"].add_note(m, kind, b.get("text") or ""))
 
 
+async def followups(request):
+    return web.json_response({"followups": request.app["sidecar"].followups()})
+
+
+async def set_followup(request):
+    app = request.app["sidecar"]
+    b = await body(request)
+    m = app.meetings.get(b.get("meeting"))
+    notes = m.notes() if m else None
+    index = b.get("index")
+    if not notes or not isinstance(index, int) or not 0 <= index < len(notes.get("mine", [])):
+        raise web.HTTPNotFound(text="No such follow-up.")
+    app.set_done(m, index, bool(b.get("done")))
+    return web.json_response({"ok": True})
+
+
+async def sync_followups(request):
+    app = request.app["sidecar"]
+    try:
+        changed = await app.pull_ticks()
+    except NotionError as e:
+        return web.json_response({"error": str(e)}, status=502)
+    return web.json_response({"changed": changed, "followups": app.followups()})
+
+
 async def get_settings(request):
     return web.json_response(request.app["sidecar"].settings)
 
@@ -1001,6 +1095,9 @@ async def main():
     app.router.add_post("/meeting/{id}/notion", send)
     app.router.add_post("/ask", ask)
     app.router.add_post("/meeting/{id}/note", note)
+    app.router.add_get("/followups", followups)
+    app.router.add_post("/followups/done", set_followup)
+    app.router.add_post("/followups/sync", sync_followups)
     app.router.add_get("/settings", get_settings)
     app.router.add_patch("/settings", set_settings)
     runner = web.AppRunner(app)

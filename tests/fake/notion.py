@@ -91,6 +91,28 @@ async def append(request):
     return web.json_response({"results": results})
 
 
+async def get_block(request):
+    await record(request)
+    bid = request.match_info["id"]
+    for children in blocks.values():
+        for b in children:
+            if b.get("id") == bid:
+                return web.json_response(b)
+    return web.json_response({"message": "Could not find block"}, status=404)
+
+
+async def update_block(request):
+    body = await record(request)
+    bid = request.match_info["id"]
+    for children in blocks.values():
+        for b in children:
+            if b.get("id") == bid:
+                for k, v in body.items():
+                    b.setdefault(k, {}).update(v)
+                return web.json_response(b)
+    return web.json_response({"message": "Could not find block"}, status=404)
+
+
 async def get_log(request):
     return web.json_response({"log": log, "pages": pages, "blocks": {k: len(v) for k, v in blocks.items()}})
 
@@ -120,6 +142,8 @@ app.router.add_post("/pages", create)
 app.router.add_get("/pages/{id}", get_page)
 app.router.add_patch("/pages/{id}", update_page)
 app.router.add_patch("/blocks/{id}/children", append)
+app.router.add_get("/blocks/{id}", get_block)
+app.router.add_patch("/blocks/{id}", update_block)
 app.router.add_get("/_log", get_log)
 app.router.add_post("/_fail", set_fail)
 app.router.add_post("/_page", add_page)

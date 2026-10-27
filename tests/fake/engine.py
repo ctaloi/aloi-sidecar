@@ -91,9 +91,32 @@ def channels():
             {"label": "Display A", "speaker": "Them", "level": 0.0, "alive": True, "speaking": False}]
 
 
+def followups():
+    out = []
+    titles = {m["id"]: m for m in meetings()}
+    for mid, w in wrapups.items():
+        notes = (w.get("edited") or w.get("draft")) if w else None
+        if not notes:
+            continue
+        for i, item in enumerate(notes["mine"]):
+            out.append({"meeting": mid, "title": titles[mid]["title"], "started": titles[mid]["started"], "index": i,
+                        "text": item["text"], "due": item.get("due", ""), "at": item.get("at", -1),
+                        "done": bool(item.get("done")), "inNotion": mid in notion, "syncError": None})
+    return sorted(out, key=lambda f: (f["started"], f["index"]))
+
+
 def state_event():
     return {"type": "state", "listening": state["listening"], "current": current_id, "channels": [],
-            "call": state["call"], "settings": state["settings"]}
+            "call": state["call"], "settings": state["settings"],
+            "followups_open": sum(1 for f in followups() if not f["done"])}
+
+
+async def get_followups(request):
+    return web.json_response({"followups": followups()})
+
+
+async def sync_followups(request):
+    return web.json_response({"changed": 0, "followups": followups()})
 
 
 def announce():
@@ -205,4 +228,7 @@ app.router.add_post("/meeting/{id}/note", ok)
 app.router.add_delete("/meeting/{id}", ok)
 app.router.add_patch("/settings", ok)
 app.router.add_post("/_call", set_call)
+app.router.add_get("/followups", get_followups)
+app.router.add_post("/followups/sync", sync_followups)
+app.router.add_post("/followups/done", ok)
 web.run_app(app, host="127.0.0.1", port=PORT, print=None)

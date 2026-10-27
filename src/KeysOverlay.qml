@@ -21,6 +21,7 @@ Popup {
         [qsTr("Meetings")],
         ["J / K", qsTr("Next / previous meeting")],
         ["G", qsTr("Go to the meeting that's on now")],
+        ["F", qsTr("Follow-ups / meetings")],
         ["R", qsTr("Rename the meeting on screen")],
         ["T", qsTr("Notes / transcript")],
         ["Menu", qsTr("Everything for the meeting (or right-click it)")],

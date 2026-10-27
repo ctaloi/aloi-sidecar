@@ -38,6 +38,16 @@ Rectangle {
             TapHandler { onTapped: bar.toggleList() }
         }
 
+        // Meetings, or every follow-up across them.
+        UnderlineTabs {
+            Layout.fillHeight: true
+            visible: bar.width > 900
+            tabs: [
+                { label: qsTr("Meetings"), current: win.view === "meetings", keys: "F", run: () => win.view = "meetings" },
+                { label: qsTr("Follow-ups"), count: engine.followupsOpen, current: win.view === "followups", keys: "F", run: () => win.view = "followups" }
+            ]
+        }
+
         // Listening, paused or offline, and the switch for it.
         Rectangle {
             id: pill

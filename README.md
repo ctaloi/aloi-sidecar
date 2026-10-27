@@ -77,6 +77,7 @@ The agent runs like Aloi Tix's: `claude -p` in
 | `N` | Type a note into the transcript |
 | `R` | Rename the meeting on screen |
 | `T` | Notes / transcript |
+| `F` | Follow-ups across every meeting / back to meetings |
 | `D` | Draft the wrap-up (again) |
 | `S` | Send to Notion |
 | `O` | Open it in Notion |

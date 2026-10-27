@@ -29,6 +29,14 @@ Rectangle {
     function rename() { if (has) { titleEdit.text = m.title; editing = true; titleEdit.forceActiveFocus(); titleEdit.selectAll() } }
     function note() { if (has) { tab = "transcript"; Qt.callLater(transcriptView.startNote) } }
     function toggleTab() { if (over) tab = tab === "notes" ? "transcript" : "notes" }
+    // From a follow-up: once the meeting's transcript has loaded, show the line.
+    property int pendingLine: -1
+    function showLineWhenLoaded(id) { pendingLine = id; if (!engine.loading && transcript.count > 0) Qt.callLater(flushLine) }
+    function flushLine() { if (pendingLine >= 0) { const id = pendingLine; pendingLine = -1; showLine(id) } }
+    Connections {
+        target: engine
+        function onLoadingChanged() { if (!engine.loading) Qt.callLater(pane.flushLine) }
+    }
     function showLine(id) { tab = "transcript"; Qt.callLater(() => transcriptView.showLine(id)) }
     function revertNotes() { wrapupView.revert() }
     function openMenu() { if (has) meetingMenu.show(m, moreButton, 0, moreButton.height + 4) }

@@ -71,9 +71,11 @@ def duration(meta):
     return f"{minutes} min" if minutes < 60 else f"{minutes // 60} h {minutes % 60:02d} min"
 
 
-def body(w):
+def body(w, refs=None):
     """The page's sections, in the shape the database's other pages have
-    (TL;DR, then Topics), with the follow-ups as to-dos."""
+    (TL;DR, then Topics), with the follow-ups as to-dos. refs, if given, is
+    filled in parallel: the index of Chris's follow-up each to-do is, else
+    None, so the to-dos' block ids can be kept for ticking them off later."""
     out = []
     if w["tldr"] or w["summary"]:
         out.append(block("heading_2", "TL;DR"))
@@ -93,7 +95,10 @@ def body(w):
 
     if w["mine"]:
         out.append(block("heading_2", "My follow-ups"))
+        start = len(out)
         out += [block("to_do", i["text"] + due(i), checked=bool(i.get("done"))) for i in w["mine"]]
+        if refs is not None:
+            refs.update({start + n: n for n in range(len(w["mine"]))})
     if w["theirs"]:
         out.append(block("heading_2", "Their commitments"))
         out += [block("bulleted_list_item", f"{i['who']}: {i['text']}{due(i)}") for i in w["theirs"]]
@@ -210,8 +215,10 @@ class Notion:
         progress = dict(meta.get("notion") or {})
         options = await self.options()
         props = self.properties(meta, w, options)
-        sections = body(w)
+        refs = {}
+        sections = body(w, refs)
         lines = transcript(segments)
+        lead = 0  # blocks put before Sidecar's own when filling in a page
 
         if not progress.get("id"):
             if target:
@@ -224,22 +231,31 @@ class Notion:
                     await self.call("PATCH", f"/pages/{target}", {"properties": empty})
                 sections = [{"object": "block", "type": "divider", "divider": {}},
                             block("heading_1", HEADING)] + sections
+                lead = 2
                 progress = {"id": target, "url": page.get("url", ""), "filled": True}
             else:
                 page = await self.call("POST", "/pages", {"parent": {"database_id": DATABASE},
                                                           "properties": props})
                 progress = {"id": page["id"], "url": page.get("url", ""), "filled": False}
             progress.update({"state": "sending", "sections": 0, "lines": 0, "toggle": None,
-                             "total": len(sections)})
+                             "total": len(sections), "todos": {}})
             save(progress)
         elif progress.get("filled"):
             sections = [{"object": "block", "type": "divider", "divider": {}},
                         block("heading_1", HEADING)] + sections
+            lead = 2
 
         page_id = progress["id"]
         while progress["sections"] < len(sections):
-            batch = sections[progress["sections"]:progress["sections"] + BATCH]
-            await self.call("PATCH", f"/blocks/{page_id}/children", {"children": batch})
+            first = progress["sections"]
+            batch = sections[first:first + BATCH]
+            result = await self.call("PATCH", f"/blocks/{page_id}/children", {"children": batch})
+            # Each to-do's block id, by which follow-up it is.
+            todos = progress.setdefault("todos", {})
+            for n, made in enumerate(result.get("results", [])):
+                k = first + n - lead
+                if k in refs:
+                    todos[str(refs[k])] = made["id"]
             progress["sections"] += len(batch)
             save(progress)
 
@@ -258,6 +274,20 @@ class Notion:
         progress["sent"] = datetime.now().timestamp()
         save(progress)
         return progress
+
+
+async def tick(notion, block_id, done):
+    """Ticks (or unticks) one follow-up's to-do on its Notion page."""
+    await notion.call("PATCH", f"/blocks/{block_id}", {"to_do": {"checked": bool(done)}})
+
+
+async def ticked(notion, block_id):
+    """Whether a follow-up's to-do is ticked in Notion, or None if it's gone."""
+    try:
+        b = await notion.call("GET", f"/blocks/{block_id}")
+    except NotionError:
+        return None
+    return None if b.get("archived") or b.get("in_trash") else bool(b.get("to_do", {}).get("checked"))
 
 
 def is_empty(prop):

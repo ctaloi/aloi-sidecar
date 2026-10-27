@@ -88,6 +88,11 @@ class Engine : public QObject {
     Q_PROPERTY(QVariantList candidates READ candidates NOTIFY candidatesChanged)
     Q_PROPERTY(bool candidatesLoading READ candidatesLoading NOTIFY candidatesChanged)
     Q_PROPERTY(QString candidatesError READ candidatesError NOTIFY candidatesChanged)
+    // Chris's follow-ups across every meeting's wrap-up, oldest meeting first:
+    // [{meeting, title, started, index, text, due, at, done, doneAt, inNotion, syncError}].
+    Q_PROPERTY(QVariantList followups READ followups NOTIFY followupsChanged)
+    Q_PROPERTY(int followupsOpen READ followupsOpen NOTIFY stateChanged)
+    Q_PROPERTY(bool syncing READ syncing NOTIFY followupsChanged)
 
 public:
     // url: the engine's address; empty uses SIDECAR_ENGINE or 127.0.0.1:8777.
@@ -112,6 +117,9 @@ public:
     QVariantList candidates() const { return m_candidates; }
     bool candidatesLoading() const { return m_candidatesLoading; }
     QString candidatesError() const { return m_candidatesError; }
+    QVariantList followups() const { return m_followups; }
+    int followupsOpen() const { return m_followupsOpen; }
+    bool syncing() const { return m_syncing; }
 
     Q_INVOKABLE QVariantMap meetingById(const QString &id) const;
     Q_INVOKABLE void connectToEngine();
@@ -152,6 +160,10 @@ public:
     // A note Chris types, or a mark on the moment, into a meeting's transcript.
     Q_INVOKABLE void addNote(const QString &id, const QString &text);
     Q_INVOKABLE void mark(const QString &id);
+    Q_INVOKABLE void fetchFollowups();
+    Q_INVOKABLE void setFollowupDone(const QString &meeting, int index, bool done);
+    // Ticks made in Notion, brought back.
+    Q_INVOKABLE void syncFollowups();
     // When the window closes: stop listening and wait (briefly) for the
     // engine to say so, so nothing is heard with the app closed.
     void stopListeningNow();
@@ -176,6 +188,7 @@ signals:
     void errorChanged();
     void wrapupChanged();
     void candidatesChanged();
+    void followupsChanged();
     // Something landed on the clipboard (what, for the toast).
     void copied(const QString &what);
 
@@ -217,4 +230,7 @@ private:
     QVariantList m_candidates;
     bool m_candidatesLoading = false;
     QString m_candidatesError;
+    QVariantList m_followups;
+    int m_followupsOpen = 0;
+    bool m_syncing = false;
 };
