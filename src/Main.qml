@@ -36,7 +36,7 @@ ApplicationWindow {
 
     readonly property bool typing: activeFocusItem !== null
         && (activeFocusItem instanceof TextInput || (activeFocusItem instanceof TextEdit && !activeFocusItem.readOnly))
-    readonly property bool overlayOpen: keys.visible || confirm.visible || sendSheet.visible || emailSheet.visible
+    readonly property bool overlayOpen: keys.visible || palette.visible || confirm.visible || sendSheet.visible || emailSheet.visible
     readonly property bool idle: !typing && !overlayOpen
     readonly property var shown: engine.selectedMeeting
     readonly property string stage: Sidecar.stage(shown)
@@ -243,6 +243,7 @@ ApplicationWindow {
     }
 
     KeysOverlay { id: keys; objectName: "keys" }
+    CommandPalette { id: palette; objectName: "palette" }
     Toast { id: toast }
     SendSheet { id: sendSheet; objectName: "sendSheet"; anchors.fill: parent; z: 40 }
     EmailSheet { id: emailSheet; objectName: "emailSheet"; anchors.fill: parent; z: 41 }
@@ -252,6 +253,7 @@ ApplicationWindow {
     Shortcut { sequence: "/"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { win.showAgent(); agentPane.input.forceActiveFocus() } }
     Shortcut { sequence: "A"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.agentHidden = !win.agentHidden }
     Shortcut { sequence: "Ctrl+F"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: { win.listHidden = false; topBar.search.forceActiveFocus() } }
+    Shortcut { sequences: ["Ctrl+K", "Ctrl+P"]; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: palette.show() }
     Shortcut { sequence: "?"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: keys.open() }
     Shortcut { sequence: "End"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { meetingPane.tab = "transcript"; meetingPane.transcriptPane.toLive() } }
     Shortcut { sequence: "J"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingList.step(1) }

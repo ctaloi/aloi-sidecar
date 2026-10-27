@@ -36,9 +36,9 @@ Rectangle {
 
         ColumnLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: 32
-            Layout.rightMargin: 32
-            Layout.topMargin: 22
+            Layout.leftMargin: 28
+            Layout.rightMargin: 20
+            Layout.topMargin: 14
             spacing: 6
             RowLayout {
                 Layout.fillWidth: true
@@ -46,11 +46,12 @@ Rectangle {
                 Label {
                     text: qsTr("Follow-ups")
                     color: ui.text
-                    font.pixelSize: 26
+                    font.pixelSize: 21
                     font.bold: true
                 }
                 Item { Layout.fillWidth: true }
                 ActionButton {
+                    implicitHeight: 30
                     text: engine.syncing ? qsTr("Checking Notion") : qsTr("Check Notion")
                     busy: engine.syncing
                     enabled: !engine.syncing
@@ -66,8 +67,8 @@ Rectangle {
                 text: {
                     const open = root.all.length - root.doneCount
                     const meetings = new Set(root.all.filter(f => !f.done).map(f => f.meeting)).size
-                    return (open === 0 ? qsTr("Nothing open.") : qsTr("%n open", "", open) + " " + qsTr("from %n meetings", "", meetings) + ".")
-                           + "  " + qsTr("What you commit to in a meeting lands here once its wrap-up is drafted; ticks sync with Notion.")
+                    return open === 0 ? qsTr("Nothing open. Ticks sync with Notion.")
+                                      : qsTr("%n open", "", open) + " " + qsTr("from %n meetings", "", meetings) + " · " + qsTr("ticks sync with Notion")
                 }
             }
             UnderlineTabs {
@@ -189,17 +190,22 @@ Rectangle {
                                 ToolTip.visible: errHover.hovered
                                 ToolTip.text: qsTr("Couldn't tick it in Notion: %1").arg(row.modelData.syncError || "")
                             }
-                            Label {
+                            // Same width with or without the tag, so dues line up.
+                            Item {
                                 Layout.alignment: Qt.AlignTop
-                                visible: row.modelData.inNotion
-                                text: "N"
-                                color: ui.faint
-                                font.pixelSize: 10
-                                font.bold: true
-                                HoverHandler { id: notionHover }
-                                ToolTip.visible: notionHover.hovered
-                                ToolTip.delay: 400
-                                ToolTip.text: qsTr("A to-do on the meeting's Notion page; ticks sync")
+                                implicitWidth: notionTag.implicitWidth
+                                implicitHeight: notionTag.implicitHeight
+                                Chip {
+                                    id: notionTag
+                                    visible: row.modelData.inNotion
+                                    text: qsTr("Notion")
+                                    tone: ui.faint
+                                    implicitHeight: 18
+                                    HoverHandler { id: notionHover }
+                                    ToolTip.visible: notionHover.hovered
+                                    ToolTip.delay: 400
+                                    ToolTip.text: qsTr("A to-do on the meeting's Notion page; ticks sync")
+                                }
                             }
                             Label {
                                 Layout.alignment: Qt.AlignTop

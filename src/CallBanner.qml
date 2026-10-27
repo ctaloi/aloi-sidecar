@@ -39,13 +39,18 @@ Rectangle {
             Layout.fillWidth: true
             elide: Text.ElideRight
             textFormat: Text.StyledText
-            text: "<b>" + qsTr("%1 is using your mic").arg(banner.call.app || "") + "</b>"
-                  + "<font color='" + ui.muted + "'>  ·  " + qsTr("listen to this call?") + "</font>"
+            text: "<b>" + (banner.width < 520 ? qsTr("%1 call").arg(banner.call.app || "") : qsTr("%1 is using your mic").arg(banner.call.app || "")) + "</b>"
+                  + "<font color='" + ui.muted + "'>  ·  " + qsTr("not recording") + "</font>"
             color: ui.text
             font.pixelSize: 13
         }
-        ActionButton { text: qsTr("Not now"); onClicked: banner.dismissed = banner.call.since }
+        ActionButton {
+            implicitHeight: 30
+            text: banner.width < 520 ? "×" : qsTr("Dismiss")
+            tip: banner.width < 520 ? qsTr("Dismiss") : ""
+            onClicked: banner.dismissed = banner.call.since
+        }
         // A new call is a new meeting, even if an earlier one is paused.
-        ActionButton { primary: true; text: qsTr("Listen"); onClicked: engine.startMeeting() }
+        ActionButton { primary: true; implicitHeight: 30; text: qsTr("Record it"); onClicked: engine.startMeeting() }
     }
 }

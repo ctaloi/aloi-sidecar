@@ -174,6 +174,15 @@ int main(int argc, char *argv[]) {
     QKeyEvent escKeys(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QGuiApplication::sendEvent(window, &escKeys);
     QMetaObject::invokeMethod(window->findChild<QObject *>("keys"), "close");
+    QObject *palette = window->findChild<QObject *>("palette");
+    QMetaObject::invokeMethod(palette, "show");
+    shot("palette", 400);
+    for (const QChar c : QStringLiteral("harb")) {
+        QKeyEvent press(QEvent::KeyPress, 0, Qt::NoModifier, QString(c));
+        QGuiApplication::sendEvent(window, &press);
+    }
+    shot("palette-typed", 300);
+    QMetaObject::invokeMethod(palette, "close");
     window->setProperty("view", "followups");
     shot("followups", 900);
 

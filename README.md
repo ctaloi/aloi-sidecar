@@ -85,7 +85,7 @@ The agent runs like Aloi Tix's: `claude -p` in
 
 ## Keys
 
-`?` lists them all.
+`?` lists them all; `Ctrl+K` finds any action or meeting by typing.
 
 | Key | Action |
 |-----|--------|
@@ -117,6 +117,7 @@ The agent runs like Aloi Tix's: `claude -p` in
 | `Y` / `N` | Allow / deny what the agent wants to run |
 | `End` | Back to the live end of the transcript |
 | `Ctrl+Shift+K` | New chat with the agent |
+| `Ctrl+K` | Do anything, go to any meeting |
 | `Q` | Quit (pauses listening) |
 
 `aloi-sidecar --ask` brings Sidecar forward with the cursor in the ask box

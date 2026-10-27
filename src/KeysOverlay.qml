@@ -44,6 +44,7 @@ Popup {
         ["Esc", qsTr("Stop the agent, leave a text box")],
         ["Ctrl+Shift+K", qsTr("New chat with the agent")],
         [qsTr("Sidecar")],
+        ["Ctrl+K", qsTr("Do anything, go to any meeting")],
         ["?", qsTr("These keys")],
         ["Q", qsTr("Quit (pauses listening)")]
     ]
