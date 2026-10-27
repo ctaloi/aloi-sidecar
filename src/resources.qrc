@@ -4,7 +4,6 @@
         <file>Colors.qml</file>
         <file>TranscriptPane.qml</file>
         <file>AgentPane.qml</file>
-        <file>SideRail.qml</file>
         <file>MeetingHeader.qml</file>
         <file>SmoothScroll.qml</file>
         <file>CommandPalette.qml</file>

@@ -125,7 +125,7 @@ Rectangle {
                                 font.pixelSize: 12
                                 wrapMode: Text.Wrap
                                 HoverHandler { id: itemHover; cursorShape: modelData.at >= 0 ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                                TapHandler { onTapped: if (modelData.at >= 0) { win.showPanel(); meetingPane.showLine(modelData.at) } }
+                                TapHandler { onTapped: if (modelData.at >= 0) meetingPane.showLine(modelData.at) }
                             }
                         }
                     }

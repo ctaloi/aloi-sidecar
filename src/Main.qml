@@ -46,7 +46,7 @@ ApplicationWindow {
         view = "meetings"
         if (width < 1100) topBar.search.text = ""  // the results stood in for the meeting; it's back
         engine.select(id)
-        if (at >= 0) { showPanel(); meetingPane.showLineWhenLoaded(at) }
+        if (at >= 0) meetingPane.showLineWhenLoaded(at)
     }
     // The list folds away by hand (\), or by itself when there isn't room for three columns.
     property bool listHidden: false
@@ -54,24 +54,9 @@ ApplicationWindow {
     // take the meeting's place until one is picked.
     readonly property bool searching: topBar.search.text.trim().length >= 2
     readonly property bool listShown: !listHidden && (width >= 1100 || searching)
-    // The agent is the middle of the window: that's where a call is worked.
-    // What was said, and the notes after, sit in a panel at the right that
-    // can be dragged wider or folded to a strip (]); both are remembered. In
-    // a narrow window the panel starts folded and, opened, takes the middle.
-    property bool panelHidden: false
-    property real panelWidth: 420
-    property bool panelOpenNarrow: false
-    readonly property bool narrow: width < 900
-    readonly property bool panelShown: view === "meetings" && (narrow ? panelOpenNarrow : !panelHidden)
-    function togglePanel() { if (narrow) panelOpenNarrow = !panelOpenNarrow; else panelHidden = !panelHidden }
-    function showPanel() { if (narrow) panelOpenNarrow = true; else panelHidden = false }
-    function showAgent() { view = "meetings"; panelOpenNarrow = false }
-    Settings {
-        location: StandardPaths.writableLocation(StandardPaths.ConfigLocation) + "/aloi-sidecar/ui.conf"
-        property alias panelHidden: win.panelHidden
-        property alias panelWidth: win.panelWidth
-    }
-    // Something waiting for an Allow can't wait behind the panel.
+    // The meeting's tabs: the agent, the transcript, the notes.
+    function showAgent() { view = "meetings"; meetingPane.tab = "agent" }
+    // Something waiting for an Allow can't wait behind another tab.
     Connections {
         target: agent
         function onApprovalsChanged() { if (agent.approvals.length > 0) win.showAgent() }
@@ -221,7 +206,7 @@ ApplicationWindow {
         function onOpenRequested(action) {
             win.raise()
             win.requestActivate()
-            if (action === "ask") { win.showAgent(); agentPane.input.forceActiveFocus() }
+            if (action === "ask") { win.showAgent(); meetingPane.agentPane.input.forceActiveFocus() }
             else if (action === "toggle") engine.toggleListening()
         }
     }
@@ -255,59 +240,28 @@ ApplicationWindow {
             id: meetingList
             visible: win.listShown && win.view === "meetings"
             Layout.preferredWidth: 300
-            Layout.fillWidth: !center.visible && !meetingPane.visible
+            Layout.fillWidth: !center.visible
             Layout.fillHeight: true
             filter: topBar.search.text
             now: win.now
         }
-        // The call: what meeting it is and its switches, then the agent.
+        // The call: what meeting it is and its switches, then its tabs.
         ColumnLayout {
             id: center
-            visible: win.view === "meetings" && !(win.searching && win.width < 1100) && !(win.narrow && win.panelShown)
+            visible: win.view === "meetings" && !(win.searching && win.width < 1100)
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumWidth: 360
             spacing: 0
             CallBanner { Layout.fillWidth: true }
             MeetingHeader { id: meetingHeader; Layout.fillWidth: true; now: win.now }
-            AgentPane {
-                id: agentPane
+            MeetingPane {
+                id: meetingPane
+                objectName: "meetingPane"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                now: win.now
             }
-        }
-        MeetingPane {
-            id: meetingPane
-            objectName: "meetingPane"
-            visible: win.panelShown && !(win.searching && win.width < 1100)
-            Layout.fillWidth: win.narrow
-            Layout.preferredWidth: win.narrow ? -1 : Math.max(320, Math.min(win.panelWidth, win.width - (meetingList.visible ? 300 : 0) - 420))
-            Layout.fillHeight: true
-            now: win.now
-            onCollapse: win.togglePanel()
-            // Drag the left edge to make it wider or narrower.
-            Rectangle {
-                visible: !win.narrow
-                width: 1; height: parent.height
-                color: edge.containsMouse || edge.pressed ? theme.accent : ui.line
-            }
-            MouseArea {
-                id: edge
-                visible: !win.narrow
-                width: 8; height: parent.height; x: -4
-                hoverEnabled: true
-                cursorShape: Qt.SplitHCursor
-                property real startX: 0
-                property real startWidth: 0
-                onPressed: mouse => { startX = mapToItem(null, mouse.x, 0).x; startWidth = meetingPane.width }
-                onPositionChanged: mouse => { if (pressed) win.panelWidth = Math.max(320, startWidth - (mapToItem(null, mouse.x, 0).x - startX)) }
-            }
-        }
-        SideRail {
-            visible: win.view === "meetings" && !win.panelShown
-            Layout.fillHeight: true
-            label: engine.selectedMeeting.state === "ended" ? qsTr("Notes") : qsTr("Transcript")
-            onOpen: win.showPanel()
         }
     }
 
@@ -319,12 +273,11 @@ ApplicationWindow {
     ConfirmOverlay { id: confirm; anchors.fill: parent; z: 45 }
 
     Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.connected; onActivated: engine.toggleListening() }
-    Shortcut { sequence: "/"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { win.showAgent(); agentPane.input.forceActiveFocus() } }
-    Shortcut { sequence: "]"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.togglePanel() }
+    Shortcut { sequence: "/"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { win.showAgent(); meetingPane.agentPane.input.forceActiveFocus() } }
     Shortcut { sequence: "Ctrl+F"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: { win.listHidden = false; topBar.search.forceActiveFocus() } }
     Shortcut { sequences: ["Ctrl+K", "Ctrl+P"]; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: palette.show() }
     Shortcut { sequence: "?"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: keys.open() }
-    Shortcut { sequence: "End"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { win.showPanel(); meetingPane.tab = "transcript"; meetingPane.transcriptPane.toLive() } }
+    Shortcut { sequence: "End"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { win.view = "meetings"; meetingPane.tab = "transcript"; meetingPane.transcriptPane.toLive() } }
     Shortcut { sequence: "J"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingList.step(1) }
     Shortcut { sequence: "K"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingList.step(-1) }
     Shortcut { sequence: "G"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: engine.select(engine.current) }
@@ -332,7 +285,7 @@ ApplicationWindow {
     Shortcut { sequence: "R"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.rename() }
     Shortcut { sequence: "E"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: win.act("end", engine.meetingById(engine.current)) }
     Shortcut { sequence: "F"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.view = win.view === "followups" ? "meetings" : "followups" }
-    Shortcut { sequence: "T"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { win.showPanel(); meetingPane.toggleTab() } }
+    Shortcut { sequence: "T"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { win.view = "meetings"; meetingPane.toggleTab() } }
     Shortcut { sequence: "D"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("draft", win.shown) }
     Shortcut { sequence: "S"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.act("send", win.shown) }
     Shortcut { sequence: "W"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("email", win.shown) }
@@ -347,7 +300,7 @@ ApplicationWindow {
     Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.running; onActivated: agent.stop() }
     Shortcut { sequence: "Y"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.approvals.length > 0; onActivated: agent.decide(agent.approvals[0].id, "once") }
     Shortcut { sequence: "N"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.approvals.length > 0; onActivated: agent.decide(agent.approvals[0].id, "deny") }
-    Shortcut { sequence: "N"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.approvals.length === 0 && win.shown.id !== undefined; onActivated: { win.showPanel(); meetingPane.note() } }
+    Shortcut { sequence: "N"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.approvals.length === 0 && win.shown.id !== undefined; onActivated: meetingPane.note() }
     Shortcut { sequence: "M"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: win.markNow() }
     Shortcut {
         sequence: "Q"
@@ -371,7 +324,7 @@ ApplicationWindow {
                 sequence: String(index + 1)
                 context: Qt.ApplicationShortcut
                 enabled: win.idle && !agent.running
-                onActivated: { win.showAgent(); agentPane.ask(agentPane.chips[index]) }
+                onActivated: { win.showAgent(); meetingPane.agentPane.ask(meetingPane.agentPane.chips[index]) }
             }
         }
     }

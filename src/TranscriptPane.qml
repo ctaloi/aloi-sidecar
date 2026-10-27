@@ -39,9 +39,9 @@ Rectangle {
             text: qsTr("Ask the agent about this")
             onTriggered: {
                 win.showAgent()
-                agentPane.input.text = qsTr("About what %1 said at %2, “%3”: ").arg(lineMenu.line.speaker).arg(lineMenu.line.time.slice(0, 5)).arg(lineMenu.line.text)
-                agentPane.input.forceActiveFocus()
-                agentPane.input.cursorPosition = agentPane.input.text.length
+                meetingPane.agentPane.input.text = qsTr("About what %1 said at %2, “%3”: ").arg(lineMenu.line.speaker).arg(lineMenu.line.time.slice(0, 5)).arg(lineMenu.line.text)
+                meetingPane.agentPane.input.forceActiveFocus()
+                meetingPane.agentPane.input.cursorPosition = meetingPane.agentPane.input.text.length
             }
         }
         MenuRow {
@@ -58,6 +58,9 @@ Rectangle {
     ListView {
         id: list
         anchors.fill: parent
+        // A readable column in a wide window, like the agent's.
+        anchors.leftMargin: Math.max(0, (pane.width - 980) / 2)
+        anchors.rightMargin: Math.max(0, (pane.width - 980) / 2)
         anchors.margins: 0
         topMargin: 14
         bottomMargin: 14
@@ -76,7 +79,9 @@ Rectangle {
         }
         property bool following: false
         function follow() { following = true; positionViewAtEnd(); following = false }
-        onContentYChanged: if (!following) stick = atYEnd || contentHeight <= height
+        onContentYChanged: if (!following && height > 0) stick = atYEnd || contentHeight <= height
+        // Shown again after another tab (it had no height meanwhile).
+        onHeightChanged: if (height > 0 && (stick || contentHeight <= height)) { stick = true; Qt.callLater(follow) }
         onCountChanged: if (stick) Qt.callLater(follow)
         onContentHeightChanged: if (stick) Qt.callLater(follow)
         SmoothScroll { flick: list }
@@ -291,8 +296,8 @@ Rectangle {
         anchors.bottom: noteBar.top
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottomMargin: 12
-        visible: !pane.following && transcript.count > 0
-        text: qsTr("↓ Live  (End)")
+        visible: !pane.following && transcript.count > 0 && list.contentHeight > list.height
+        text: engine.selected === engine.current && engine.listening ? qsTr("↓ Live  (End)") : qsTr("↓ End")
         primary: true
         onClicked: pane.toLive()
     }

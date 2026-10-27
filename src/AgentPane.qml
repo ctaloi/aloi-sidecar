@@ -41,44 +41,6 @@ Rectangle {
         anchors.rightMargin: pane.gutter
         spacing: 0
 
-        // Who you're talking to, about which meeting, and a way to start over.
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 44
-            Layout.leftMargin: 18
-            Layout.rightMargin: 12
-            spacing: 10
-            Label {
-                text: qsTr("Agent")
-                color: ui.text
-                font.pixelSize: 14
-                font.bold: true
-            }
-            // Which meetings the next question is about: this one, or (ctrl+A)
-            // all of them for one question.
-            Label {
-                Layout.fillWidth: true
-                text: (agent.wide ? "◎ " + qsTr("All meetings") : qsTr("This meeting")) + "  ▾"
-                color: agent.wide ? theme.accent : scopeHover.hovered ? ui.muted : ui.faint
-                font.pixelSize: 12
-                elide: Text.ElideRight
-                HoverHandler { id: scopeHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: agent.wide = !agent.wide }
-                ToolTip.visible: scopeHover.hovered
-                ToolTip.delay: 400
-                ToolTip.text: agent.wide ? qsTr("The next question searches every meeting (ctrl+A switches back)")
-                                         : qsTr("Ask the next question across every meeting (ctrl+A)")
-            }
-            ActionButton {
-                visible: agent.messages.length > 0
-                enabled: !agent.running
-                text: qsTr("New chat")
-                implicitHeight: 30
-                onClicked: agent.forget()
-            }
-        }
-        Rectangle { Layout.fillWidth: true; height: 1; color: ui.line }
-
         ListView {
             id: list
             Layout.fillWidth: true
@@ -98,7 +60,8 @@ Rectangle {
             function follow() { following = true; positionViewAtEnd(); following = false }
             onCountChanged: if (stick) Qt.callLater(follow)
             onContentHeightChanged: if (stick) Qt.callLater(follow)
-            onContentYChanged: if (!following) stick = atYEnd || contentHeight <= height
+            onContentYChanged: if (!following && height > 0) stick = atYEnd || contentHeight <= height
+            onHeightChanged: if (height > 0 && stick) Qt.callLater(follow)
             SmoothScroll { flick: list }
 
             // ListView pins delegates to x: 0, so the margin goes inside a full-width item.

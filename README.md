@@ -95,7 +95,7 @@ The agent runs like Aloi Tix's: `claude -p` in
 | `M` | Mark this moment as one that matters (highlighted in the wrap-up) |
 | `N` | Type a note into the transcript |
 | `R` | Rename the meeting on screen |
-| `T` | Notes / transcript |
+| `T` | Next tab: agent, transcript, notes |
 | `F` | Follow-ups across every meeting / back to meetings |
 | `D` | Draft the wrap-up (again) |
 | `S` | Send to Notion |
@@ -110,7 +110,6 @@ The agent runs like Aloi Tix's: `claude -p` in
 | `\` | Show / hide the meetings list |
 | `Ctrl+F` | Search what was said, in every meeting (Enter opens the first hit) |
 | `/` | Ask about the meeting on screen |
-| `]` | Fold away or show the transcript and notes (drag its edge to resize) |
 | Right-click → Merge | Two meetings that were one call become one (the earlier keeps its title) |
 | `1`–`4` | Ask a suggested question |
 | `Ctrl+A` | (in the ask box) The next question goes across all meetings |
