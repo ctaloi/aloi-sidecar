@@ -76,12 +76,16 @@ Popup {
         const stage = Sidecar.stage(m)
         const notes = stage === "ready" || stage === "sendFailed" || stage === "sent" || (stage === "skipped" && m.wrapup === "ready")
 
+        // The meeting that's on gets its own group: End and Mark act on it,
+        // whichever meeting is on screen.
+        const on = engine.current !== "" ? engine.meetingById(engine.current) : null
+        const live = on && win.shown.id === on.id ? "action" : "live"  // one group when it's the one on screen
         if (engine.connected)
-            add("action", engine.listening ? qsTr("Pause listening") : engine.current !== "" ? qsTr("Resume listening") : qsTr("Start listening"),
+            add(on ? live : "app", engine.listening ? qsTr("Pause listening") : engine.current !== "" ? qsTr("Resume listening") : qsTr("Start listening"),
                 "space", () => engine.toggleListening())
         if (engine.current !== "") {
-            add("action", qsTr("End the meeting"), "E", () => win.act("end", engine.meetingById(engine.current)))
-            add("action", qsTr("Mark this moment"), "M", () => win.markNow())
+            add(live, qsTr("End the meeting"), "E", () => win.act("end", on))
+            add(live, qsTr("Mark this moment"), "M", () => win.markNow())
         }
         if (has) {
             add("action", qsTr("Note"), "N", () => meetingPane.note())
@@ -196,8 +200,9 @@ Popup {
                     leftPadding: 18
                     topPadding: row.index === 0 ? 6 : 12
                     bottomPadding: 4
-                    text: ({ action: qsTr("This meeting"), app: qsTr("Sidecar"), setting: qsTr("Settings"), meeting: qsTr("Meetings") })[row.modelData.group].toUpperCase()
-                          + (row.modelData.group === "action" && win.shown.title ? "   " + win.shown.title : "")
+                    text: ({ live: qsTr("On now"), action: qsTr("On screen"), app: qsTr("Sidecar"), setting: qsTr("Settings"), meeting: qsTr("Meetings") })[row.modelData.group].toUpperCase()
+                          + (row.modelData.group === "action" && win.shown.title ? "   " + win.shown.title
+                             : row.modelData.group === "live" && engine.current !== "" ? "   " + (engine.meetingById(engine.current).title || "") : "")
                     elide: Text.ElideRight
                     color: ui.faint
                     font.pixelSize: 10

@@ -44,12 +44,16 @@ ApplicationWindow {
     property string view: "meetings"
     function openFrom(id, at) {
         view = "meetings"
+        if (width < 1100) topBar.search.text = ""  // the results stood in for the meeting; it's back
         engine.select(id)
         if (at >= 0) meetingPane.showLineWhenLoaded(at)
     }
     // The list folds away by hand (\), or by itself when there isn't room for three columns.
     property bool listHidden: false
-    readonly property bool listShown: !listHidden && width >= 1100
+    // Searching shows the list at any width; in a narrow window the results
+    // take the meeting's place until one is picked.
+    readonly property bool searching: topBar.search.text.trim().length >= 2
+    readonly property bool listShown: !listHidden && (width >= 1100 || searching)
     // The agent folds to a strip at the right (A), and stays that way next time.
     property bool agentHidden: false
     function showAgent() { agentHidden = false }
@@ -219,6 +223,7 @@ ApplicationWindow {
             id: meetingList
             visible: win.listShown && win.view === "meetings"
             Layout.preferredWidth: 320
+            Layout.fillWidth: !meetingPane.visible
             Layout.fillHeight: true
             filter: topBar.search.text
             now: win.now
@@ -226,7 +231,7 @@ ApplicationWindow {
         MeetingPane {
             id: meetingPane
             objectName: "meetingPane"
-            visible: win.view === "meetings"
+            visible: win.view === "meetings" && !(win.searching && win.width < 1100)
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumWidth: 300

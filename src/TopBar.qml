@@ -126,12 +126,12 @@ Rectangle {
 
         // Search the meetings by title.
         Rectangle {
-            implicitWidth: Math.min(260, bar.width * 0.2)
+            implicitWidth: Math.min(260, Math.max(150, bar.width * 0.2))
             implicitHeight: 30
             radius: Math.min(4, theme.radius)
             color: "transparent"
             border.color: field.activeFocus ? theme.accent : ui.line
-            visible: bar.width > 820
+            visible: bar.width > 600 || field.activeFocus || field.text !== ""
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 10
@@ -155,7 +155,7 @@ Rectangle {
                         font.pixelSize: 12
                     }
                 }
-                KeyCap { text: "ctrl+F"; visible: !field.activeFocus }
+                KeyCap { text: "ctrl+F"; visible: !field.activeFocus && bar.width > 820 }
             }
         }
 
