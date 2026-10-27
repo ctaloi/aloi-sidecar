@@ -14,12 +14,14 @@ sed "s|@ENGINE@|$ROOT/engine|g" "$ROOT/engine/aloi-sidecar-engine.service" > "$U
 mv "$UNIT.tmp" "$UNIT"
 systemctl --user daemon-reload
 systemctl --user enable aloi-sidecar-engine.service
-# Never in the middle of a meeting: a restart would cut it in two.
-if curl -s --max-time 2 http://127.0.0.1:8777/status | grep -q '"listening": true'; then
-    echo "Sidecar is listening, so the engine wasn't restarted. Once the call is over:"
-    echo "  systemctl --user restart aloi-sidecar-engine"
-else
+# Never in the middle of a meeting: a restart would cut it in two. Only an
+# engine that answers that it isn't listening (or isn't running) restarts.
+STATUS="$(curl -s --max-time 10 http://127.0.0.1:8777/status || true)"
+if ! systemctl --user is-active --quiet aloi-sidecar-engine.service || echo "$STATUS" | grep -q '"listening": false'; then
     systemctl --user restart aloi-sidecar-engine.service
+else
+    echo "Sidecar is listening (or busy), so the engine wasn't restarted. Once the call is over:"
+    echo "  systemctl --user restart aloi-sidecar-engine"
 fi
 
 "$ROOT/bin/build"
