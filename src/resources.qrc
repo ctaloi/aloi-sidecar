@@ -4,7 +4,10 @@
         <file>Colors.qml</file>
         <file>TranscriptPane.qml</file>
         <file>AgentPane.qml</file>
-        <file>AgentRail.qml</file>
+        <file>SideRail.qml</file>
+        <file>MeetingHeader.qml</file>
+        <file>SmoothScroll.qml</file>
+        <file>LevelTrace.qml</file>
         <file>CommandPalette.qml</file>
         <file>KeysOverlay.qml</file>
         <file>ActionButton.qml</file>

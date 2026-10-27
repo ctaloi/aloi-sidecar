@@ -90,10 +90,14 @@ Rectangle {
             contentHeight: lists.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            ColumnLayout {
+            // Side by side across a wide agent, a board to glance at; stacked
+            // when it's narrow.
+            GridLayout {
                 id: lists
                 width: parent.width
-                spacing: 8
+                columns: card.width >= 620 ? Math.max(1, card.sections.filter(x => (card.t[x.key] || []).length > 0).length) : 1
+                columnSpacing: 18
+                rowSpacing: 8
                 Repeater {
                     model: card.sections
                     delegate: ColumnLayout {
@@ -102,6 +106,8 @@ Rectangle {
                         readonly property var items: card.t[modelData.key] || []
                         visible: items.length > 0
                         Layout.fillWidth: true
+                        Layout.preferredWidth: 1
+                        Layout.alignment: Qt.AlignTop
                         spacing: 3
                         Label {
                             text: section.modelData.title
@@ -119,7 +125,7 @@ Rectangle {
                                 font.pixelSize: 12
                                 wrapMode: Text.Wrap
                                 HoverHandler { id: itemHover; cursorShape: modelData.at >= 0 ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                                TapHandler { onTapped: if (modelData.at >= 0) meetingPane.showLine(modelData.at) }
+                                TapHandler { onTapped: if (modelData.at >= 0) { win.showPanel(); meetingPane.showLine(modelData.at) } }
                             }
                         }
                     }

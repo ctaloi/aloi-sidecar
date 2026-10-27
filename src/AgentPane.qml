@@ -11,7 +11,9 @@ Rectangle {
     color: ui.panel
 
     property alias input: field
-    signal collapse()
+    // In the middle of a wide window the conversation keeps to a readable
+    // column instead of running edge to edge.
+    readonly property real gutter: Math.max(0, (width - 860) / 2)
     readonly property bool over: engine.selectedMeeting.state === "ended"
     // During a call: catching up. Afterwards: what to take away from it.
     readonly property var chips: over ? [
@@ -30,19 +32,19 @@ Rectangle {
         if (text.trim() === "" || !ready) return
         agent.ask(text)
         field.text = ""
+        list.stick = true
     }
-
-    Rectangle { anchors.left: parent.left; width: 1; height: parent.height; color: ui.line }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.leftMargin: 1
+        anchors.leftMargin: pane.gutter
+        anchors.rightMargin: pane.gutter
         spacing: 0
 
         // Who you're talking to, about which meeting, and a way to start over.
         RowLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 52
+            Layout.preferredHeight: 44
             Layout.leftMargin: 18
             Layout.rightMargin: 12
             spacing: 10
@@ -56,7 +58,7 @@ Rectangle {
             // all of them for one question.
             Label {
                 Layout.fillWidth: true
-                text: (agent.wide ? "◎ " + qsTr("All meetings") : (engine.selectedMeeting.title || "")) + "  ▾"
+                text: (agent.wide ? "◎ " + qsTr("All meetings") : qsTr("This meeting")) + "  ▾"
                 color: agent.wide ? theme.accent : scopeHover.hovered ? ui.muted : ui.faint
                 font.pixelSize: 12
                 elide: Text.ElideRight
@@ -74,13 +76,6 @@ Rectangle {
                 implicitHeight: 30
                 onClicked: agent.forget()
             }
-            ActionButton {
-                text: "›"
-                tip: qsTr("Hide the agent (A)")
-                implicitHeight: 30
-                implicitWidth: 30
-                onClicked: pane.collapse()
-            }
         }
         Rectangle { Layout.fillWidth: true; height: 1; color: ui.line }
 
@@ -96,8 +91,15 @@ Rectangle {
             visible: count > 0
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-            onCountChanged: Qt.callLater(positionViewAtEnd)
-            onContentHeightChanged: if (!moving) Qt.callLater(positionViewAtEnd)
+            // Follows the answer as it streams in only while you're at the
+            // bottom; scroll up to read and it stays put until you come back.
+            property bool stick: true
+            property bool following: false
+            function follow() { following = true; positionViewAtEnd(); following = false }
+            onCountChanged: if (stick) Qt.callLater(follow)
+            onContentHeightChanged: if (stick) Qt.callLater(follow)
+            onContentYChanged: if (!following) stick = atYEnd || contentHeight <= height
+            SmoothScroll { flick: list }
 
             // ListView pins delegates to x: 0, so the margin goes inside a full-width item.
             delegate: Item {

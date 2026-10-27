@@ -119,7 +119,7 @@ Popup {
         add("app", qsTr("Start a new meeting"), "ctrl+N", () => win.newMeeting())
         add("app", qsTr("Ask the agent"), "/", () => { win.showAgent(); agentPane.input.forceActiveFocus() })
         add("app", qsTr("Ask across all meetings"), "ctrl+A", () => { win.showAgent(); agent.wide = true; agentPane.input.forceActiveFocus() })
-        add("app", win.agentHidden ? qsTr("Show the agent") : qsTr("Hide the agent"), "A", () => win.agentHidden = !win.agentHidden)
+        add("app", win.panelShown ? qsTr("Fold away the transcript and notes") : qsTr("Show the transcript and notes"), "]", () => win.togglePanel())
         add("app", win.listHidden ? qsTr("Show the meeting list") : qsTr("Hide the meeting list"), "\\", () => win.listHidden = !win.listHidden)
         add("app", qsTr("New chat with the agent"), "ctrl+shift+K", () => agent.forget())
         add("app", qsTr("Search what was said, in every meeting"), "ctrl+F", () => { win.listHidden = false; topBar.search.forceActiveFocus() })

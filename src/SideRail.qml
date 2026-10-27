@@ -1,12 +1,13 @@
 import QtQuick
 import QtQuick.Controls
 
-// The agent folded away to a strip at the right edge (A). Clicking it brings
-// the agent back; a dot says it's still answering, or waiting for an Allow.
+// The transcript and notes folded away to a strip at the right edge (]).
+// Clicking it brings them back; a dot pulses while the call is heard.
 Rectangle {
     id: rail
     color: hover.hovered ? ui.hover : ui.panel
     implicitWidth: 40
+    property string label: qsTr("Transcript")
     signal open()
 
     Rectangle { anchors.left: parent.left; width: 1; height: parent.height; color: ui.line }
@@ -22,7 +23,7 @@ Rectangle {
             color: hover.hovered ? ui.text : ui.muted
             font.pixelSize: 18
         }
-        KeyCap { text: "A"; anchors.horizontalCenter: parent.horizontalCenter }
+        KeyCap { text: "]"; anchors.horizontalCenter: parent.horizontalCenter }
         Item {
             anchors.horizontalCenter: parent.horizontalCenter
             width: label.implicitHeight
@@ -31,7 +32,7 @@ Rectangle {
                 id: label
                 anchors.centerIn: parent
                 rotation: 90
-                text: qsTr("Agent")
+                text: rail.label
                 color: hover.hovered ? ui.text : ui.muted
                 font.pixelSize: 12
                 font.bold: true
@@ -39,11 +40,11 @@ Rectangle {
         }
         Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
-            visible: agent.running || agent.approvals.length > 0
+            visible: engine.listening
             width: 8; height: 8; radius: 4
-            color: agent.approvals.length > 0 ? ui.danger : theme.accent
+            color: ui.live
             SequentialAnimation on opacity {
-                running: agent.running
+                running: engine.listening
                 loops: Animation.Infinite
                 NumberAnimation { to: 0.3; duration: 600 }
                 NumberAnimation { to: 1; duration: 600 }
@@ -55,5 +56,5 @@ Rectangle {
     TapHandler { onTapped: rail.open() }
     ToolTip.visible: hover.hovered
     ToolTip.delay: 500
-    ToolTip.text: qsTr("Show the agent")
+    ToolTip.text: qsTr("Show the %1 (])").arg(rail.label.toLowerCase())
 }

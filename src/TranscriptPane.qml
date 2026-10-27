@@ -16,7 +16,7 @@ Rectangle {
         const people = engine.selectedMeeting.people || []
         return people.length === 1 ? people[0].split(" ")[0] : qsTr("Them")
     }
-    function toLive() { list.stick = true; list.positionViewAtEnd() }
+    function toLive() { list.stick = true; list.follow() }
     // Scroll to a line (from a wrap-up item) and light it up for a moment.
     function showLine(id) {
         const row = transcript.rowOf(id)
@@ -72,11 +72,14 @@ Rectangle {
         // Another meeting on screen starts at its live end.
         Connections {
             target: engine
-            function onSelectedChanged() { list.stick = true; Qt.callLater(list.positionViewAtEnd) }
+            function onSelectedChanged() { list.stick = true; Qt.callLater(list.follow) }
         }
-        onMovementEnded: stick = atYEnd
-        onCountChanged: if (stick) Qt.callLater(positionViewAtEnd)
-        onContentHeightChanged: if (stick && !moving) Qt.callLater(positionViewAtEnd)
+        property bool following: false
+        function follow() { following = true; positionViewAtEnd(); following = false }
+        onContentYChanged: if (!following) stick = atYEnd || contentHeight <= height
+        onCountChanged: if (stick) Qt.callLater(follow)
+        onContentHeightChanged: if (stick) Qt.callLater(follow)
+        SmoothScroll { flick: list }
 
         delegate: Item {
             id: row

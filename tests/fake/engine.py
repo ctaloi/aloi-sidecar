@@ -3,6 +3,7 @@
 and an interim line, with the real engine's /events, /listen and /meeting/new."""
 import asyncio
 import json
+import math
 import sys
 import time
 
@@ -89,8 +90,15 @@ def segments():
 
 
 def channels():
-    return [{"label": "Mic", "speaker": "Chris", "level": 0.004, "alive": True, "speaking": False},
-            {"label": "Laptop", "speaker": "Them", "level": 0.03, "alive": True, "speaking": True},
+    # Turns talking: the other side for a few seconds, then Chris, with the
+    # rise and fall of speech, so the meters and the trace have something to show.
+    t = time.time()
+    them_turn = int(t / 4) % 3 != 2
+    wave = abs(math.sin(t * 7)) * (0.6 + 0.4 * abs(math.sin(t * 1.3)))
+    them = 0.035 * wave if them_turn else 0.001
+    me = 0.002 if them_turn else 0.03 * wave
+    return [{"label": "Mic", "speaker": "Chris", "level": me, "alive": True, "speaking": not them_turn},
+            {"label": "Laptop", "speaker": "Them", "level": them, "alive": True, "speaking": them_turn},
             {"label": "Display A", "speaker": "Them", "level": 0.0, "alive": True, "speaking": False}]
 
 
