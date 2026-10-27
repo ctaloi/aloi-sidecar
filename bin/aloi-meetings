@@ -46,7 +46,7 @@ GRAPH = "https://graph.microsoft.com/v1.0"
 SELECT = ",".join([
     "subject", "start", "end", "isAllDay", "isCancelled", "showAs", "responseStatus",
     "location", "organizer", "isOrganizer", "onlineMeeting", "onlineMeetingUrl",
-    "onlineMeetingProvider", "isOnlineMeeting", "webLink", "body", "sensitivity",
+    "onlineMeetingProvider", "isOnlineMeeting", "webLink", "body", "sensitivity", "attendees",
 ])
 LOGIN_TIMEOUT = 300
 HTTP_TIMEOUT = 20
@@ -459,6 +459,10 @@ def shape_event(g):
         "provider": (g.get("onlineMeetingProvider") or "").lower(),
         "webLink": g.get("webLink", ""),
         "private": private,
+        # Who's invited (rooms left out), for Aloi Sidecar's notes on the meeting.
+        "attendees": [{"name": a.get("emailAddress", {}).get("name") or a.get("emailAddress", {}).get("address", ""),
+                       "email": a.get("emailAddress", {}).get("address", "")}
+                      for a in g.get("attendees") or [] if a.get("type") != "resource"],
     }
 
 
