@@ -873,6 +873,12 @@ class Sidecar:
             seg["hold_until"] = time.time() + ECHO_HOLD
             self.pending_me.append(seg)
         else:
+            # Two outputs carrying the same call (a capture moved, or audio
+            # mirrored) decode the same words at the same moment; keep one.
+            recent = [s for s in (self.current.segments[-8:] if self.current else []) if s["speaker"] not in (ME, *OWN)]
+            if any(overlaps(seg, s) and similar(seg["text"], s["text"]) for s in recent):
+                self.broadcast({"type": "echo_dropped", "text": text})
+                return
             self.commit(seg)
             for m in list(self.pending_me):
                 if overlaps(m, seg) and similar(m["text"], seg["text"]):
@@ -959,10 +965,17 @@ class Channel:
 
     async def run(self):
         loop = asyncio.get_running_loop()
+        # A speaker monitor stays on its own speakers. Left movable, WirePlumber
+        # shifts a capture off an idle output onto whichever one is playing,
+        # and every Them line then comes out once per output. The mic follows
+        # the default source, so it may move.
+        pin = [] if self.device.startswith("@") else [
+            "--property=node.dont-move=true", "--property=node.dont-reconnect=true",
+            "--property=node.dont-fallback=true"]
         while True:
             proc = await asyncio.create_subprocess_exec(
                 "parec", "-d", self.device, "--format=s16le", f"--rate={RATE}", "--channels=1",
-                "--raw", "--latency-msec=100",
+                "--raw", "--latency-msec=100", *pin,
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
             self.pid = proc.pid  # so the call watch knows this recorder is ours
             vad, window = make_vad()
