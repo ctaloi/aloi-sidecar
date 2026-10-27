@@ -66,16 +66,6 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 9; height: 9; radius: 4.5
                     color: engine.listening ? ui.live : engine.connected ? ui.muted : ui.faint
-                    SequentialAnimation on opacity {
-                        running: engine.listening
-                        loops: Animation.Infinite
-                        NumberAnimation { to: 0.3; duration: 900; easing.type: Easing.InOutSine }
-                        NumberAnimation { to: 1; duration: 900; easing.type: Easing.InOutSine }
-                    }
-                    Connections {
-                        target: engine
-                        function onStateChanged() { if (!engine.listening) dot.opacity = 1 }
-                    }
                 }
                 Label {
                     anchors.verticalCenter: parent.verticalCenter
@@ -106,7 +96,6 @@ Rectangle {
                                 radius: 1
                                 height: Math.max(2, Math.min(parent.height, Math.sqrt(modelData.level) * parent.height * 3))
                                 color: modelData.speaker === "Them" ? ui.them : ui.me
-                                Behavior on height { NumberAnimation { duration: 120 } }
                             }
                         }
                     }

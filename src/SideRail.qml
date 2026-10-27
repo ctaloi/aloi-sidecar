@@ -43,12 +43,6 @@ Rectangle {
             visible: engine.listening
             width: 8; height: 8; radius: 4
             color: ui.live
-            SequentialAnimation on opacity {
-                running: engine.listening
-                loops: Animation.Infinite
-                NumberAnimation { to: 0.3; duration: 600 }
-                NumberAnimation { to: 1; duration: 600 }
-            }
         }
     }
 
