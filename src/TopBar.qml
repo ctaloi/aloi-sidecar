@@ -4,10 +4,10 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 
 // The one bar: the app, whether it's listening (the thing that must never
-// be in doubt), what each input hears, search, and the way into the keys.
+// be in doubt) and what each input hears, search, settings, and the keys.
 Rectangle {
     id: bar
-    implicitHeight: 52
+    implicitHeight: 46
     color: ui.window
 
     property alias search: field
@@ -52,11 +52,11 @@ Rectangle {
         Rectangle {
             id: pill
             implicitWidth: pillRow.implicitWidth + 22
-            implicitHeight: 34
+            implicitHeight: 30
             radius: Math.min(4, theme.radius)
             color: engine.listening ? ui.alpha(ui.live, pillHover.hovered ? 0.26 : 0.16)
                                     : (pillHover.hovered ? ui.hover : "transparent")
-            border.color: engine.listening ? ui.alpha(ui.live, 0.7) : ui.line
+            border.color: engine.listening ? ui.alpha(ui.live, 0.7) : !engine.connected ? ui.alpha(ui.danger, 0.6) : ui.line
             Row {
                 id: pillRow
                 anchors.centerIn: parent
@@ -82,62 +82,52 @@ Rectangle {
                     text: !engine.connected ? qsTr("Engine offline")
                         : engine.listening ? qsTr("Listening")
                         : engine.current !== "" ? qsTr("Paused") : qsTr("Not listening")
-                    color: ui.text
+                    color: engine.connected ? ui.text : ui.danger
                     font.pixelSize: 13
                     font.bold: engine.listening
+                }
+                // What each input hears, as a thin bar apiece: the mic, the
+                // laptop, each display. The tooltip names them.
+                Row {
+                    visible: engine.listening
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 3
+                    Repeater {
+                        model: engine.channels
+                        delegate: Rectangle {
+                            required property var modelData
+                            width: 3; height: 14
+                            radius: 1
+                            color: ui.alpha(ui.text, 0.12)
+                            opacity: modelData.alive ? 1 : 0.35
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                width: parent.width
+                                radius: 1
+                                height: Math.max(2, Math.min(parent.height, Math.sqrt(modelData.level) * parent.height * 3))
+                                color: modelData.speaker === "Them" ? ui.them : ui.me
+                                Behavior on height { NumberAnimation { duration: 120 } }
+                            }
+                        }
+                    }
                 }
                 KeyCap { text: "space"; visible: engine.connected; anchors.verticalCenter: parent.verticalCenter }
             }
             HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: engine.toggleListening() }
-        }
-
-        // A meter per input while listening: the mic, the laptop, each display.
-        Row {
-            spacing: 14
-            visible: engine.listening && bar.width > 1000
-            Repeater {
-                model: engine.channels
-                delegate: Column {
-                    required property var modelData
-                    spacing: 4
-                    opacity: modelData.alive ? 1 : 0.35
-                    Label {
-                        text: modelData.label
-                        color: modelData.speaking ? ui.text : ui.faint
-                        font.pixelSize: 10
-                    }
-                    Rectangle {
-                        width: 52; height: 3
-                        radius: 1.5
-                        color: ui.raised
-                        Rectangle {
-                            height: parent.height
-                            radius: 1.5
-                            width: Math.min(parent.width, Math.sqrt(modelData.level) * parent.width * 3)
-                            color: modelData.speaker === "Them" ? ui.them : ui.me
-                            Behavior on width { NumberAnimation { duration: 120 } }
-                        }
-                    }
-                }
-            }
+            ToolTip.visible: pillHover.hovered
+            ToolTip.delay: 500
+            ToolTip.text: !engine.connected ? (engine.error || qsTr("The engine isn't running"))
+                : engine.listening ? engine.channels.map(c => c.label + (c.alive ? "" : " " + qsTr("(gone)"))).join(" · ")
+                : qsTr("Space listens")
         }
 
         Item { Layout.fillWidth: true }
 
-        // The engine: green when connected, red when it isn't.
-        Rectangle {
-            width: 8; height: 8; radius: 4
-            color: engine.connected ? ui.them : ui.danger
-            ToolTip.visible: dotHover.hovered
-            ToolTip.text: engine.connected ? qsTr("The engine is running") : (engine.error || qsTr("The engine isn't running"))
-            HoverHandler { id: dotHover }
-        }
-
         // Search the meetings by title.
         Rectangle {
             implicitWidth: Math.min(260, bar.width * 0.2)
-            implicitHeight: 34
+            implicitHeight: 30
             radius: Math.min(4, theme.radius)
             color: "transparent"
             border.color: field.activeFocus ? theme.accent : ui.line
@@ -207,12 +197,15 @@ Rectangle {
             }
         }
 
-        Row {
-            spacing: 6
-            KeyCap { text: "?"; anchors.verticalCenter: parent.verticalCenter }
-            Label { text: qsTr("keys"); color: ui.muted; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
-            HoverHandler { cursorShape: Qt.PointingHandCursor }
+        KeyCap {
+            text: "?"
+            tone: keysHover.hovered ? ui.text : ui.faint
+            implicitWidth: 22; implicitHeight: 22
+            HoverHandler { id: keysHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: keys.open() }
+            ToolTip.visible: keysHover.hovered
+            ToolTip.delay: 400
+            ToolTip.text: qsTr("Every key")
         }
     }
 }
