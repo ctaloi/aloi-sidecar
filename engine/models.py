@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Downloads the speech models the engine needs, once, into
-~/.local/share/aloi-sidecar/models (about 650 MB)."""
+~/.local/share/aloi-sidecar/models (about 700 MB)."""
 import tarfile
 import urllib.request
 from pathlib import Path
@@ -8,6 +8,7 @@ from pathlib import Path
 MODELS = Path.home() / ".local/share/aloi-sidecar/models"
 BASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
 PARAKEET = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
+VOICES = "nemo_en_titanet_small.onnx"
 
 
 def fetch(url, dest):
@@ -26,4 +27,7 @@ if not (MODELS / PARAKEET / "tokens.txt").exists():
     with tarfile.open(archive) as tar:
         tar.extractall(MODELS, filter="data")
     archive.unlink()
+# Telling voices apart on the other side of a call (speaker names).
+if not (MODELS / VOICES).exists():
+    fetch(f"{BASE}/speaker-recongition-models/{VOICES}", MODELS / VOICES)
 print(f"Speech models are in {MODELS}")

@@ -204,6 +204,41 @@ async def main():
     again = E.Sidecar()
     check("an interrupted draft is lined up to draft again", [x.meta["title"] for x in again.interrupted] == ["Half drafted"])
 
+    # Voices: lines alike enough are one voice; names by hand beat guesses.
+    import numpy as np
+    import voices as V
+    vm = E.Meeting.create("Voices")
+    vm.meta.update(state="ended", started=2000, ended=2100)
+    vs = V.Voices(vm.folder)
+    a, b = np.zeros(192, np.float32), np.zeros(192, np.float32)
+    a[0], b[1] = 1, 1
+    near_a = a.copy(); near_a[2] = 0.3; near_a /= np.linalg.norm(near_a)
+    check("a new voiceprint is voice 1", vs.assign(a)[0] == 1)
+    check("one like it is the same voice", vs.assign(near_a)[0] == 1)
+    check("one unlike it is voice 2", vs.assign(b)[0] == 2)
+    check("voices outlast a restart", len(V.Voices(vm.folder).centroids) == 2)
+    vm._segments = []
+    vm.append({"speaker": "Them", "start": 1, "end": 2, "text": "Hi, it's Hector.", "voice": 1})
+    vm.append({"speaker": "Them", "start": 3, "end": 4, "text": "And I'm here too.", "voice": 2})
+    vm.append({"speaker": "Them", "start": 5, "end": 6, "text": "Okay.", })
+    vm.close(); vm.save()
+    app.meetings[vm.id] = vm
+    app.guess_names(vm, [{"voice": 1, "name": "Hector"}])
+    app.update_meeting(vm, {"voices": {"2": "Courtney"}})
+    app.guess_names(vm, [{"voice": 2, "name": "Someone else"}])
+    check("a guessed name and a hand-given one, and the hand wins", [s["speaker"] for s in app.labelled(vm)] == ["Hector", "Courtney", "Them"])
+    check("the lines themselves still say Them", all(s["speaker"] == "Them" for s in vm.segments))
+    vm2 = E.Meeting.create("Voices, part two")
+    vm2.meta.update(state="ended", started=2200, ended=2300, voices={"1": {"name": "Greg", "by": "hand"}})
+    vm2._segments = []
+    vm2.append({"speaker": "Them", "start": 2210, "end": 2211, "text": "Greg here.", "voice": 1})
+    vm2.close(); vm2.save()
+    app.meetings[vm2.id] = vm2
+    joined = app.merge_meetings(vm, vm2)
+    check("merging numbers the other meeting's voices after this one's", [s.get("voice") for s in joined.segments] == [1, 2, None, 3]
+          and joined.meta["voices"]["3"]["name"] == "Greg")
+    check("voices are off unless turned on", not app.voices_on())
+
     # Search finds what was said, in any meeting.
     found = app.search("thanks BYE")
     check("search finds a line by its words, any case", len(found) == 1 and found[0]["hits"][0]["text"] == "Thanks, bye.")

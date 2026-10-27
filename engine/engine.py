@@ -27,6 +27,7 @@ import agenda
 import calls
 import mailer
 import takeaways
+import voices
 import wrapup
 import notion
 from notion import Notion, NotionError
@@ -40,7 +41,8 @@ PARAKEET = MODELS / "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
 MEETINGS = Path(os.environ.get("SIDECAR_MEETINGS", Path.home() / ".local/share/aloi-sidecar/meetings"))
 TRASH = MEETINGS.parent / "trash"  # deleted meetings go here, never straight to nothing
 SETTINGS = Path(os.environ.get("SIDECAR_SETTINGS", Path.home() / ".config/aloi-sidecar/settings.json"))
-DEFAULTS = {"watch_calls": True, "calendar_offers": True, "live_takeaways": True, "stop_on_silence": True}
+DEFAULTS = {"watch_calls": True, "calendar_offers": True, "live_takeaways": True, "stop_on_silence": True,
+            "speaker_names": False}
 QUIET_ASK = 5 * 60  # seconds of nothing said while listening before Sidecar asks if the call's still on
 QUIET_END = 3 * 60  # and then, unanswered and still quiet, before the meeting ends by itself
 SLACK_AFTER = 5 * 60  # a meeting's "about to start" offer stays up until five minutes in
@@ -231,6 +233,10 @@ class Sidecar:
     def __init__(self):
         self.recognizer = make_recognizer()
         self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)  # one recognizer, one decoder thread
+        # Voiceprints on a thread of their own, so they never hold up a line's words.
+        self.voice_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self.voice_ext = voices.Extractor()
+        self.voice_sets = {}  # meeting id -> voices.Voices
         self.pending_me = []  # held briefly so speaker echo of "Them" can be dropped
         self.clients = set()
         self.channels = []
@@ -569,7 +575,20 @@ class Sidecar:
             task = self.drafting.pop(m.id, None)
             if task:
                 task.cancel()
-        tagged = [(s, True) for s in keep.segments] + [(s, False) for s in other.segments]
+        # The other meeting's voices are numbered after this one's: its voice 1
+        # isn't this one's voice 1. Their voiceprints and names come along.
+        kv, ov = voices.Voices(keep.folder), voices.Voices(other.folder)
+        offset = max([len(kv.centroids)] + [s.get("voice") or 0 for s in keep.segments])
+        theirs = [dict(s, voice=s["voice"] + offset) if s.get("voice") else s for s in other.segments]
+        if ov.centroids:
+            kv.centroids += ov.centroids
+            kv.counts += ov.counts
+            kv.save()
+        for v, name in (other.meta.get("voices") or {}).items():
+            keep.meta.setdefault("voices", {})[str(int(v) + offset)] = name
+        self.voice_sets.pop(keep.id, None)
+        self.voice_sets.pop(other.id, None)
+        tagged = [(s, True) for s in keep.segments] + [(s, False) for s in theirs]
         tagged.sort(key=lambda x: x[0]["start"])
         remap, merged = {}, []
         for i, (s, ours) in enumerate(tagged):
@@ -650,7 +669,7 @@ class Sidecar:
                 options = await self.notion.options()
             except NotionError:
                 options = {}  # drafts fine without Notion; just no names or tags
-            notes = await wrapup.draft(ME, m.meta, m.segments, options)
+            notes = await wrapup.draft(ME, m.meta, self.labelled(m), options)
             w = m.wrapup()
             w.update(state="ready", error=None, draft=notes, drafted=time.time(), lines=m.lines(),
                      model=wrapup.MODEL)
@@ -785,7 +804,7 @@ class Sidecar:
 
     async def _send(self, m, target, save):
         try:
-            progress = await self.notion.send(m.meta, m.notes(), m.segments, target, save)
+            progress = await self.notion.send(m.meta, m.notes(), self.labelled(m), target, save)
             # Each follow-up remembers its to-do on the page, so ticking it off
             # in Sidecar ticks it off in Notion too.
             if progress.get("todos"):
@@ -856,7 +875,7 @@ class Sidecar:
                 continue
             lines = m.lines()
             try:
-                lists = await takeaways.update(ME, m.meta, list(m.segments))
+                lists = await takeaways.update(ME, m.meta, self.labelled(m))
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # a missed update is fine; the next one catches up
@@ -865,11 +884,54 @@ class Sidecar:
                 m.save_takeaways(t)
                 continue
             lists["lookups"] = takeaways.merge_lookups(t.get("lookups"), lists.get("lookups"))
+            self.guess_names(m, lists.pop("voices", []))
             t = {**lists, "lines": lines, "updated": time.time()}
             m.save_takeaways(t)
             self.broadcast({"type": "takeaways", "id": m.id, "takeaways": t})
 
     # ---- follow-ups: what Chris has to do, across every meeting ----
+
+    # ---- voices: telling the other side apart ----
+
+    def voices_on(self):
+        return self.settings["speaker_names"] and self.voice_ext.available()
+
+    async def voice_of(self, samples):
+        """Which of the meeting's voices a line of theirs is in, or None when
+        it's too short to tell (or voices are off, or anything goes wrong)."""
+        m = self.current
+        if not m or len(samples) < voices.MIN_SECONDS * voices.RATE:
+            return None
+        try:
+            e = await asyncio.get_running_loop().run_in_executor(self.voice_pool, self.voice_ext.embed, samples)
+            vs = self.voice_sets.get(m.id) or self.voice_sets.setdefault(m.id, voices.Voices(m.folder))
+            voice, sim = vs.assign(e)
+            # Numbers only, never words: for tuning the threshold on real calls.
+            print(f"voice: {voice} of {len(vs.centroids)}, best match {sim if sim is None else round(sim, 3)}", file=sys.stderr, flush=True)
+            return voice
+        except Exception as err:
+            print(f"voice: {err}", file=sys.stderr, flush=True)
+            return None
+
+    def guess_names(self, m, guesses):
+        """Names the takeaways pass is sure of, for voices nobody named by hand."""
+        names = m.meta.setdefault("voices", {})
+        changed = False
+        for g in guesses:
+            key = str(g["voice"])
+            if (names.get(key) or {}).get("by") != "hand" and (names.get(key) or {}).get("name") != g["name"].strip():
+                names[key] = {"name": g["name"].strip(), "by": "guess"}
+                changed = True
+        if changed:
+            m.save()
+            self.announce(m)
+
+    def labelled(self, m):
+        """The meeting's lines with each voice's name (or "Voice 2") as the
+        speaker, for what reads them: the wrap-up, the takeaways, Notion.
+        The lines themselves keep "Them"."""
+        names = m.meta.get("voices") or {}
+        return [dict(s, speaker=voices.label(s, names)) if s.get("voice") else s for s in m.segments]
 
     def search(self, q, per=3, limit=40):
         """Meetings whose title or transcript has every word of q, newest
@@ -1023,6 +1085,14 @@ class Sidecar:
         for key in ("title", "people", "skipped"):
             if key in changes:
                 m.meta[key] = changes[key]
+        # Names for voices: {"2": "Hector"} names voice 2 by hand (a hand
+        # always beats a guess); an empty name clears it.
+        for v, name in (changes.get("voices") or {}).items():
+            names = m.meta.setdefault("voices", {})
+            if name:
+                names[str(v)] = {"name": str(name).strip(), "by": "hand"}
+            else:
+                names.pop(str(v), None)
         m.save()
         self.announce(m)
 
@@ -1092,8 +1162,10 @@ class Sidecar:
     def them_speaking(self):
         return any(c.speaking for c in self.channels if c.speaker != ME)
 
-    def add_segment(self, speaker, start, end, text):
+    def add_segment(self, speaker, start, end, text, voice=None):
         seg = {"speaker": speaker, "start": start, "end": end, "text": text}
+        if voice:
+            seg["voice"] = voice
         if speaker == ME:
             # Speakers bleeding into the mic: the "Them" line may already be in,
             # or may still be decoding, so check now and again until the hold ends.
@@ -1246,7 +1318,8 @@ class Channel:
                         text = await loop.run_in_executor(self.app.pool, self.app.decode, samples)
                         self.app.broadcast({"type": "interim", "label": self.label, "speaker": self.speaker, "text": ""})
                         if text:
-                            self.app.add_segment(self.speaker, start, end, text)
+                            voice = await self.app.voice_of(samples) if self.speaker != ME and self.app.voices_on() else None
+                            self.app.add_segment(self.speaker, start, end, text, voice)
             except (asyncio.IncompleteReadError, ConnectionError):
                 pass
             finally:

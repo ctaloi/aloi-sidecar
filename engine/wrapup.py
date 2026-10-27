@@ -66,7 +66,7 @@ def prompt(me, meta, options):
 {chr(10).join(about)}
 
 About the transcript:
-- Local speech recognition made it. "{me}" lines are {me}'s microphone; "Them" is everyone else on the call, mixed together. Work out who's who from context when you can, and say "they" when you can't.
+- Local speech recognition made it. "{me}" lines are {me}'s microphone; "Them" is everyone else on the call, mixed together. Lines told apart by voice say "Voice 2" (the same number is the same person all through) or the person's name instead of "Them". Work out who's who from context when you can, and say "they" when you can't.
 - Names, numbers and jargon are often misheard. Read past obvious errors; don't repeat garbled words as if they were real.
 - "Note" lines are notes {me} typed during or after the meeting; "Mark" lines are moments he flagged as important. Weigh both heavily: marked moments belong in the summary, and notes are his own words about what matters.
 - Each line starts with its number, like [#12]. Set "at" to the number of the line an item comes from, or -1.
