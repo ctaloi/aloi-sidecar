@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
         std::fprintf(stderr, "No transcript from the stand-in engine.\n");
         return 1;
     }
-    wait(4000);  // the who's-talking trace fills in
+    wait(800);
     QDir().mkpath(out);
     window->grabWindow().save(out + "/listening-" + size + ".png");
     window->setProperty("panelHidden", true);

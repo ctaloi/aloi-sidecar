@@ -131,7 +131,7 @@ Rectangle {
                 }
             }
 
-            // When, how long, with whom; and, while it's heard, who's talking.
+            // When, how long, with whom.
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 14
@@ -177,13 +177,6 @@ Rectangle {
                     Item { width: 12; height: 22; visible: stageChip.visible }
                     StageChip { id: stageChip; stage: head.stage; m: head.m }
                 }
-            }
-            // While it's heard: who's talking, across the header.
-            LevelTrace {
-                visible: head.live
-                Layout.fillWidth: true
-                Layout.preferredHeight: 36
-                Layout.topMargin: 4
             }
             Item { implicitHeight: 6 }
         }
