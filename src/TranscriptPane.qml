@@ -32,6 +32,29 @@ Rectangle {
     function startNote() { noting = true; noteField.text = ""; noteField.forceActiveFocus() }
     Timer { id: flashTimer; interval: 2200; onTriggered: pane.flash = -1 }
 
+    SideMenu {
+        id: lineMenu
+        property var line: ({})
+        MenuRow {
+            text: qsTr("Ask the agent about this")
+            onTriggered: {
+                win.showAgent()
+                agentPane.input.text = qsTr("About what %1 said at %2, “%3”: ").arg(lineMenu.line.speaker).arg(lineMenu.line.time.slice(0, 5)).arg(lineMenu.line.text)
+                agentPane.input.forceActiveFocus()
+                agentPane.input.cursorPosition = agentPane.input.text.length
+            }
+        }
+        MenuRow {
+            text: qsTr("Copy this line")
+            onTriggered: { engine.copyToClipboard(lineMenu.line.text); toast.show(qsTr("Copied the line.")) }
+        }
+        MenuRow {
+            text: qsTr("Copy the transcript")
+            keys: "shift+C"
+            onTriggered: win.act("copyTranscript", engine.selectedMeeting)
+        }
+    }
+
     ListView {
         id: list
         anchors.fill: parent
@@ -71,6 +94,12 @@ Rectangle {
             readonly property bool isMark: speaker === "Mark"
             width: list.width
             height: body.implicitHeight + (sameAsAbove ? 4 : 12)
+
+            // Right-click a line: copy it, or ask the agent about it.
+            TapHandler {
+                acceptedButtons: Qt.RightButton
+                onTapped: (point) => { lineMenu.line = { text: row.text, time: row.time, speaker: row.mine ? qsTr("I") : who.text }; lineMenu.popup(row, point.position.x, point.position.y) }
+            }
 
             Rectangle {
                 anchors.fill: parent
