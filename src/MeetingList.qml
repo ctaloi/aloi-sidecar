@@ -163,7 +163,12 @@ Rectangle {
                                 const g = Sidecar.group(row.m, pane.now)
                                 const day = g === "week" || g === "earlier" || (pane.place(row.m) === "wrap" && g !== "today")
                                             ? Sidecar.dayLabel(row.m) + "  ·  " : ""
-                                return day + Sidecar.span(row.m) + "  ·  " + qsTr("%n lines", "", row.m.lines || 0)
+                                // Who it was with says more than how many lines it ran to.
+                                const people = row.m.people || []
+                                const with_ = people.length === 1 ? qsTr("with %1").arg(people[0])
+                                            : people.length > 1 ? qsTr("with %1 +%2").arg(people[0]).arg(people.length - 1)
+                                            : qsTr("%n lines", "", row.m.lines || 0)
+                                return day + Sidecar.span(row.m) + "  ·  " + with_
                             }
                             color: ui.faint
                             font.pixelSize: 11

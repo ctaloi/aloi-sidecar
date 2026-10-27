@@ -150,7 +150,7 @@ Rectangle {
                     Label {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: field.text === ""
-                        text: qsTr("Search what was said")
+                        text: qsTr("Search transcripts")
                         color: ui.faint
                         font.pixelSize: 12
                     }

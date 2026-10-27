@@ -50,7 +50,7 @@ Popup {
     ]
 
     readonly property real inner: Math.min(win.width - 96, 920)
-    readonly property bool twoColumns: win.width > 1000
+    readonly property bool twoColumns: inner >= 760
     width: inner + leftPadding + rightPadding
     height: Math.min(win.height - 60, implicitHeight)
     padding: 26

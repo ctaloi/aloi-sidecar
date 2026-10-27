@@ -60,12 +60,13 @@ wrapups = {
 }
 notion = {"past-1": {"id": "abc", "url": "https://www.notion.so/abc", "state": "sent", "sent": NOW - 24 * 3600}}
 skipped = set()
+PEOPLE = {current_id: ["Amy Reed", "Sam Ortiz"], "past-0": ["Dana Park"], "past-1": ["Luis Ortega", "Kim Hale", "Dana Park"]}
 
 
 def meta(mid, title, started, ended, st, lines, event=None):
     w = wrapups.get(mid)
     return {"id": mid, "title": title, "started": started, "ended": ended, "state": st, "event": event,
-            "people": [], "notion": notion.get(mid), "lines": lines, "skipped": mid in skipped,
+            "people": PEOPLE.get(mid, []), "notion": notion.get(mid), "lines": lines, "skipped": mid in skipped,
             "wrapup": w["state"] if w else None, "edited": bool(w and w.get("edited"))}
 
 
