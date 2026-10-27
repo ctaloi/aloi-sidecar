@@ -39,11 +39,13 @@ Claude Code.
   everything else: draft again, send, open in Notion, copy the wrap-up or
   transcript, mark it as needing no wrap-up, show its files, delete it (to
   `~/.local/share/aloi-sidecar/trash`).
-- **It notices calls.** When another app (Teams, Zoom, a browser tab)
-  holds the mic for more than a few seconds, a notification offers to
-  listen; when the call lets go of it, another offers to end the meeting,
-  which ends by itself after two quiet minutes. Dictation (Superwhisper)
-  doesn't count. Turn it off in the settings menu (⋯ at the top).
+- **It records calls by itself.** When another app (Teams, Zoom, a browser
+  tab) holds the mic for more than a few seconds, Sidecar starts listening
+  straight away, named from the call app's window and your calendar, and a
+  notification offers **Not now**, which stops and discards it. When the
+  call lets go of the mic the meeting ends half a minute later unless you
+  click Not now. Dictation (Superwhisper) doesn't count. Turn it off in the
+  settings menu (⋯ at the top).
 - **It knows your calendar.** Through the Aloi Meetings sign-in, a call is
   named after the meeting it is, with who was invited. Two minutes before
   a meeting a notification offers **Join and listen**; when the next

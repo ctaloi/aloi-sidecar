@@ -39,6 +39,52 @@ async def window_name():
     return None
 
 
+# Window titles that are only a call app's own pages, never a meeting's name.
+GENERIC = {"chat", "activity", "calendar", "calls", "teams", "microsoft teams", "meet", "google meet", "zoom",
+           "zoom meeting", "zoom workplace", "home", "slack", "discord", "webex", "whatsapp", "assignments",
+           "files", "apps", "people", "communities", "meeting", "meeting compact view"}
+APP_KEYS = (("teams", "Teams"), ("zoom", "Zoom"), ("meet.google", "Google Meet"), ("slack", "Slack"),
+            ("discord", "Discord"), ("webex", "Webex"), ("whatsapp", "WhatsApp"))
+
+
+def meeting_title(app, title):
+    """The meeting's name out of a call app's window title: "Weekly sync |
+    Microsoft Teams" -> "Weekly sync"; "Chat | Simply Support | Microsoft
+    Teams" -> None, since that's a chat, not a call."""
+    parts = [p.strip() for p in title.replace(" - ", " | ").split("|")]
+    parts = [p for p in parts if p and p.lower() not in GENERIC and "microsoft teams" not in p.lower()
+             and not p.lower().startswith(("chromium", "google chrome", "firefox"))]
+    if not parts or (app == "Teams" and title.lower().startswith("chat")):
+        return None
+    name = parts[0]
+    for lead in ("Meeting in ", "Meeting with "):
+        if name.startswith(lead) and app == "Teams":
+            return name
+    return name if len(name) > 2 else None
+
+
+async def context():
+    """What the call apps' windows say: which app, and the meeting's name
+    if a window carries one. The window in front counts first."""
+    try:
+        clients = json.loads(await run("hyprctl", "-j", "clients") or "[]")
+        active = json.loads(await run("hyprctl", "-j", "activewindow") or "{}")
+    except (json.JSONDecodeError, FileNotFoundError):
+        return {}
+    front = active.get("address")
+    found = {}
+    for w in sorted(clients, key=lambda w: (w.get("address") != front, w.get("focusHistoryID", 99))):
+        cls = (w.get("class") or "").lower()
+        app = next((name for key, name in APP_KEYS if key in cls), None)
+        if not app:
+            continue
+        found.setdefault("app", app)
+        title = meeting_title(app, w.get("title") or "")
+        if title:
+            return {"app": app, "title": title}
+    return found
+
+
 def describe(props):
     name = props.get("application.name") or props.get("application.process.binary") or "An app"
     return {"Chromium": "Chromium", "Google Chrome": "Chrome", "Firefox": "Firefox"}.get(name, name)

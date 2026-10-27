@@ -168,7 +168,7 @@ Rectangle {
             SideMenu {
                 id: settingsMenu
                 MenuRow {
-                    text: qsTr("Offer to listen when an app uses the mic")
+                    text: qsTr("Record calls by itself when an app uses the mic")
                     setting: true
                     on: engine.settings.watch_calls !== false
                     onTriggered: engine.setSetting("watch_calls", !(engine.settings.watch_calls !== false))

@@ -63,10 +63,10 @@ It gives subject, start, end, organizer and join URL. Attendees and the agenda
 A meeting ends in one of these ways, and every one is visible:
 
 - **End** (`E`), by hand, which goes straight to the wrap-up.
-- **The calendar meeting is over and the call audio stops**, meaning the
-  speaker side has been quiet for three minutes. Sidecar shows "Sounds like
-  Axiom weekly ended" with End and Keep listening buttons. If you do
-  nothing, it ends after another two minutes.
+- **The call app lets go of the mic.** Sidecar shows "The Teams call
+  ended" with End now and Not now; with no answer it ends after half a
+  minute. (Decided 2026-10-27: record everything while the mic is hot, end
+  when it's over, Not now being the exception both ways.)
 - **The next calendar meeting starts.** The current one ends and the new
   one begins, always. Two meetings are never merged again.
 - Stop listening (Space) pauses the meeting without ending it. Space again

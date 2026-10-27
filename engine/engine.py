@@ -45,7 +45,7 @@ QUIET_ASK = 5 * 60  # seconds of nothing said while listening before Sidecar ask
 QUIET_END = 3 * 60  # and then, unanswered and still quiet, before the meeting ends by itself
 SLACK_AFTER = 5 * 60  # a meeting's "about to start" offer stays up until five minutes in
 SWITCH_AFTER = 60  # seconds before a running meeting gives way to the next calendar meeting
-END_AFTER = 120  # seconds after a call lets go of the mic before its meeting ends by itself
+END_AFTER = 30  # seconds after a call lets go of the mic before its meeting ends, unless Not now
 KEY_FILE = Path.home() / ".config/aloi-sidecar/api-key"  # optional; else SDK defaults (ANTHROPIC_API_KEY etc.)
 RECOVER_WINDOW = 2 * 60 * 60  # a meeting left live by a crash comes back paused if its last line is this recent
 ME = "Chris"
@@ -316,16 +316,18 @@ class Sidecar:
 
     async def call_started(self, app):
         """Another app took the mic. If Sidecar isn't already listening, it
-        asks, once, with a notification; clicking it starts a meeting."""
+        starts straight away, so the opening of the call is never lost, and a
+        notification offers Not now, which stops and throws the recording
+        away."""
         self.call = {"app": app, "since": time.time()}
         self.broadcast(self.state())
         if self.listening or not self.settings["watch_calls"]:
             return
-        self.notify(self.ask_to_listen(app))
+        self.notify(self.auto_listen(app))
 
     async def call_ended(self, app):
-        """The call let go of the mic. A meeting that's listening gets an
-        End prompt, and ends by itself after two quiet minutes."""
+        """The call let go of the mic. A meeting that's listening ends by
+        itself half a minute later, unless Not now keeps it going."""
         self.call = None
         self.broadcast(self.state())
         if self.listening and self.current:
@@ -338,14 +340,34 @@ class Sidecar:
             self.prompt.cancel()
         self.prompt = asyncio.create_task(coro) if coro else None
 
-    async def ask_to_listen(self, app):
-        event = self.agenda.happening()
-        choice = await calls.notify(f"{app} is using your mic",
-                                    f"Listen to “{event['subject']}” with Sidecar?" if event else "Listen to this call with Sidecar?",
-                                    [("default", "Listen"), ("ignore", "Not now")])
-        if choice == "default" and not self.listening:
-            await self.start_meeting()
+    async def auto_listen(self, app):
+        m = await self.start_meeting()
+        choice = await calls.notify(f"Recording “{m.meta['title']}”",
+                                    f"{app} is using your mic, so Sidecar is listening. Not now stops and discards it.",
+                                    [("default", "Open Sidecar"), ("discard", "Not now")])
+        if choice == "default":
             await self.show_window()
+        elif choice == "discard" and self.current is m:
+            await self.discard_current()
+
+    async def discard_current(self):
+        """Not now on a call Sidecar started by itself: stop, and nothing of it
+        is kept (it goes to the trash folder if anything was heard)."""
+        m = self.current
+        if not m:
+            return
+        await self.set_listening(False)
+        self.current = None
+        m.meta["state"] = "ended"
+        m.meta["ended"] = time.time()
+        m.close()
+        if m.lines():
+            m.save()
+            self.delete_meeting(m)
+        else:
+            del self.meetings[m.id]
+            self.broadcast({"type": "meeting_removed", "id": m.id})
+        self.broadcast(self.state())
 
     async def show_window(self):
         """Listening always shows: the window opens (or comes forward) with
@@ -420,18 +442,17 @@ class Sidecar:
             await self.start_meeting(event=agenda.event_meta(e))
 
     async def ask_to_end(self, m, app):
-        heard, asked = m.lines(), time.time()
-        choice = await calls.notify(f"Sounds like the {app} call ended",
-                                    f"End “{m.meta['title']}”? It ends by itself in two minutes if nothing more is said.",
-                                    [("default", "End meeting"), ("keep", "Keep listening")], timeout=END_AFTER)
+        asked = time.time()
+        choice = await calls.notify(f"The {app} call ended",
+                                    f"“{m.meta['title']}” ends in {END_AFTER} seconds and its wrap-up gets drafted.",
+                                    [("default", "End now"), ("keep", "Not now")], timeout=END_AFTER)
         if choice == "keep":
             return
-        if choice is None:  # dismissed or timed out: the two minutes still run their course
+        if choice is None:  # dismissed or timed out: the half minute still runs its course
             await asyncio.sleep(max(0, END_AFTER - (time.time() - asked)))
         if self.current is not m or self.call or not self.listening:
             return  # something else happened meanwhile: another call, a pause, or it ended already
-        if choice == "default" or m.lines() == heard:
-            await self.end_meeting()
+        await self.end_meeting()
 
     async def start_meeting(self, title=None, event=None):
         """Starts a meeting, ending the one that's on. With no title or
@@ -442,11 +463,19 @@ class Sidecar:
         if self.prompt and asyncio.current_task() is not self.prompt:
             self.notify(None)
         event = agenda.normalize(event)
+        # Unnamed: the call app's window says which meeting it is (matched to
+        # the calendar when it can be), else the calendar's meeting on now,
+        # else the window's own name for it, else the app and the time.
+        seen = {}
         if not title and not event:
-            on = self.agenda.happening()
+            seen = await calls.context() if self.call else {}
+            on = self.agenda.matching(seen.get("title")) or self.agenda.happening()
             event = agenda.event_meta(on) if on else None
-        if not title and not event and self.call and self.call["app"] in calls.CALL_APPS:
-            title = f"{self.call['app']} call at {datetime.now():%-I:%M}"
+        if not title and not event and seen.get("title"):
+            title = seen["title"]
+        app = seen.get("app") or (self.call or {}).get("app")
+        if not title and not event and app in calls.CALL_APPS:
+            title = f"{app} call at {datetime.now():%-I:%M}"
         m = Meeting.create(title or (event or {}).get("subject") or ad_hoc_title(), event)
         m.meta["people"] = agenda.people(event, ME)
         self.meetings[m.id] = m

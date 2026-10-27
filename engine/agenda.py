@@ -8,6 +8,7 @@ knows what a call is called and who's in it, offers to listen a couple of
 minutes before a meeting, and notices when the next one begins.
 """
 import asyncio
+import difflib
 import json
 import os
 import time
@@ -93,6 +94,19 @@ class Calendar:
         if running:
             return max(running, key=lambda e: e["t0"])
         return min(on, key=lambda e: abs(e["t0"] - t)) if on else None
+
+    def matching(self, name, t=None):
+        """Today's meeting a call app's window names, if one's near enough in
+        time: a call can start early or run into the next slot."""
+        if not name:
+            return None
+        t = t or time.time()
+        key = name.lower()
+        near = [e for e in self.events if e["t0"] - 30 * 60 <= t < e["t1"] + 15 * 60]
+        scored = [(difflib.SequenceMatcher(None, key, e["subject"].lower()).ratio()
+                   + (0.5 if key in e["subject"].lower() or e["subject"].lower() in key else 0), e) for e in near]
+        scored = [x for x in scored if x[0] >= 0.6]
+        return max(scored, key=lambda x: x[0])[1] if scored else None
 
     def starting(self, t=None, within=LEAD):
         """Meetings that begin within the next couple of minutes."""

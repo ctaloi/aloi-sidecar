@@ -66,6 +66,15 @@ def main():
           meta["subject"] == "Northwind weekly" and abs(meta["start"] - (now - 120)) < 2 and meta["joinUrl"].startswith("https://"))
     check("people leave out Chris", agenda.people(meta, "Chris") == ["Amy Reed"])
     check("normalizing twice changes nothing", agenda.normalize(agenda.normalize(events[1])) == agenda.normalize(events[1]))
+    check("a Teams window names its meeting, matched to the calendar",
+          cal.matching("Northwind Weekly")["id"] == "b")
+    check("a meeting far off in the day isn't matched", cal.matching("Late call") is None)
+    check("an unrelated name matches nothing", cal.matching("Simply Support") is None)
+    import calls
+    check("a Teams meeting window gives its name", calls.meeting_title("Teams", "Weekly sync | Microsoft Teams") == "Weekly sync")
+    check("a Teams chat isn't a meeting", calls.meeting_title("Teams", "Chat | Simply Support | Microsoft Teams") is None)
+    check("Zoom's own window names nothing", calls.meeting_title("Zoom", "Zoom Meeting") is None)
+    check("Meet in a browser gives its name", calls.meeting_title("Google Meet", "Meet - Collections Software Review - Chromium") == "Collections Software Review")
     os.environ["SIDECAR_CALENDAR"] = ""
     check("an empty setting turns the calendar off", agenda.Calendar().program is None)
     print(f"\n{'All passed' if not failures else str(len(failures)) + ' failed'}")
