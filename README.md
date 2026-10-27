@@ -98,6 +98,7 @@ The agent runs like Aloi Tix's: `claude -p` in
 | `T` | Next tab: agent, transcript, notes |
 | `F` | Follow-ups across every meeting / back to meetings |
 | `D` | Draft the wrap-up (again) |
+| `A` | Do it all: file in Notion and save the follow-up email to Drafts |
 | `S` | Send to Notion |
 | `O` | Open it in Notion |
 | `W` | Write the follow-up email, saved to Outlook Drafts (never sent) |

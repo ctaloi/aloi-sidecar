@@ -31,6 +31,7 @@ Popup {
         ["Ctrl+F", qsTr("Search what was said, in every meeting")],
         [qsTr("Wrap-up")],
         ["D", qsTr("Draft the wrap-up (again)")],
+        ["A", qsTr("Do it all: Notion page and email draft")],
         ["S", qsTr("Send to Notion")],
         ["O", qsTr("Open it in Notion")],
         ["W", qsTr("Write the follow-up email (to Outlook Drafts)")],

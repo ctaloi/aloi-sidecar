@@ -38,6 +38,13 @@ SideMenu {
         onTriggered: win.act("draft", menu.m)
     }
     MenuRow {
+        text: qsTr("Do it all: Notion and the email draft")
+        keys: "A"
+        visible: menu.stage !== "sent" && !menu.isCurrent
+        enabled: menu.m.wrapup === "ready" && menu.stage !== "sending"
+        onTriggered: win.act("finish", menu.m)
+    }
+    MenuRow {
         text: menu.stage === "sendFailed" ? qsTr("Try sending to Notion again") : qsTr("Send to Notion…")
         keys: "S"
         visible: menu.stage !== "sent" && !menu.isCurrent

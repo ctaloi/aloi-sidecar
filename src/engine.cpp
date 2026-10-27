@@ -489,6 +489,10 @@ void Engine::merge(const QString &id, const QString &other) {
     });
 }
 
+void Engine::finish(const QString &id) {
+    post(path(id, "/finish"), {});
+}
+
 void Engine::remove(const QString &id) {
     post(path(id), {}, "DELETE");
 }

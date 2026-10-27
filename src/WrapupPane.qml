@@ -290,15 +290,28 @@ Rectangle {
                             }
                         }
                     }
+                    // Everything after the call in one click: a new Notion page
+                    // and the follow-up email saved to Outlook Drafts.
+                    ActionButton {
+                        visible: root.stage !== "sent" && root.stage !== "sending" && root.stage !== "sendFailed"
+                        primary: true
+                        implicitHeight: 30
+                        enabled: !root.drafting
+                        text: qsTr("Do it all")
+                        keys: root.width >= 620 ? "A" : ""
+                        tip: qsTr("File it in Notion as a new page and save the follow-up email to Outlook Drafts (never sent)")
+                        onClicked: win.act("finish", root.m)
+                    }
                     ActionButton {
                         visible: root.stage !== "sent"
-                        primary: true
+                        primary: root.stage === "sending" || root.stage === "sendFailed"
                         implicitHeight: 30
                         busy: root.stage === "sending"
                         enabled: root.stage !== "sending" && !root.drafting
                         text: root.stage === "sendFailed" ? qsTr("Try again") : root.stage === "sending" ? qsTr("Sending")
-                            : root.width < 560 ? qsTr("Send") : qsTr("Send to Notion")
-                        keys: root.stage === "sending" ? "" : "S"
+                            : qsTr("Notion…")
+                        keys: root.stage === "sending" || root.width < 780 ? "" : "S"
+                        tip: qsTr("Send to Notion: a new page, or fill in one already there")
                         onClicked: win.act("send", root.m)
                     }
                     ActionButton {

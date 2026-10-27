@@ -75,6 +75,7 @@ def main():
     started = time.time() - 3 * 3600
     make_meeting(meetings, "2026-10-26_100000", "Call at 10:00", 1500, started)
     make_meeting(meetings, "2026-10-26_120000", "Northwind", 12, started + 7200)
+    make_meeting(meetings, "2026-10-26_140000", "Harbor", 12, started + 14400)
 
     engine_port, notion_port = free_port(), free_port()
     procs = [subprocess.Popen([PY, str(ROOT / "tests/fake/notion.py"), str(notion_port)])]
@@ -239,6 +240,23 @@ def main():
         first = [r for r in log["log"] if r["path"] == f"/blocks/{seeded['id']}/children"][0]["body"]["children"]
         check("our part sits under its own heading", first[1]["type"] == "heading_1"
               and first[1]["heading_1"]["rich_text"][0]["text"]["content"] == "Sidecar notes")
+
+        # Do it all: a new page in Notion and the email saved to Drafts, in one go.
+        third = "2026-10-26_140000"
+        call(base, "POST", f"/meeting/{third}/wrapup")
+        wait("draft 3", lambda: _ready(base, third))
+        before = (tmp / "vmail.txt").read_text()
+        status, done = call(base, "POST", f"/meeting/{third}/finish")
+        check("do it all starts both", status == 200 and done["started"] == {"notion": True, "email": True}, done)
+        wait("finished in Notion", lambda: _notion(base, third, "sent"))
+        def drafted():
+            _, w = call(base, "GET", f"/meeting/{third}/wrapup")
+            return ((w["wrapup"].get("email") or {}).get("state") == "saved") or None
+        wait("email drafted", drafted)
+        made = (tmp / "vmail.txt").read_text()
+        check("do it all files it and drafts the email", made != before and "draft new" in made and "--send" not in made, made)
+        status, again = call(base, "POST", f"/meeting/{third}/finish")
+        check("doing it again does nothing twice", again["started"] == {"notion": False, "email": False}, again)
 
         # A failed draft says why; delete moves the folder to the trash.
         check("skipping is saved", call(base, "PATCH", f"/meeting/{other}", {"skipped": True})[1]["skipped"] is True)

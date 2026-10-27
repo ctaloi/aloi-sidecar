@@ -105,6 +105,8 @@ Popup {
                 add("action", m.wrapup ? qsTr("Draft the wrap-up again") : qsTr("Draft the wrap-up"), "D", () => win.act("draft", m))
             if (!current && notes && stage !== "sent" && stage !== "sending")
                 add("action", qsTr("Send to Notion"), "S", () => win.act("send", m))
+            if (!current && m.wrapup === "ready" && stage !== "sent" && stage !== "sending")
+                add("action", qsTr("Do it all: Notion and the email draft"), "A", () => win.act("finish", m))
             if (stage === "sent")
                 add("action", qsTr("Open in Notion"), "O", () => win.act("notion", m))
             if (!current && m.wrapup === "ready")

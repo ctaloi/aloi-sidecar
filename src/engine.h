@@ -155,6 +155,8 @@ public:
     Q_INVOKABLE void resume(const QString &id);
     // Two meetings that were one call: the earlier keeps both transcripts.
     Q_INVOKABLE void merge(const QString &id, const QString &other);
+    // After a call, in one go: a new Notion page and the email in Drafts.
+    Q_INVOKABLE void finish(const QString &id);
     // Move a meeting to the trash folder.
     Q_INVOKABLE void remove(const QString &id);
     // Mark a meeting as needing no wrap-up (a test call), or undo that.

@@ -734,6 +734,28 @@ class Sidecar:
         except Exception as err:
             self.set_email(m, state="ready", error=str(err) or type(err).__name__)
 
+    def finish(self, m):
+        """Everything after a call in one go: filed in Notion as a new page,
+        and the follow-up email written (unless it already is) and saved to
+        Outlook Drafts. Never sent. Each part reports as it does on its own."""
+        if not m.notes():
+            return None
+        started = {"notion": False, "email": False}
+        if (m.meta.get("notion") or {}).get("state") != "sent":
+            started["notion"] = self.send(m) or m.id in self.sending
+        e = (m.wrapup() or {}).get("email") or {}
+        if e.get("state") not in ("saved", "saving", "writing"):
+            asyncio.create_task(self._finish_email(m))
+            started["email"] = True
+        return started
+
+    async def _finish_email(self, m):
+        if ((m.wrapup() or {}).get("email") or {}).get("state") != "ready":
+            self.set_email(m, state="writing", error=None, to=mailer.recipients(m.meta), cc=[])
+            await self._write_email(m)
+        if ((m.wrapup() or {}).get("email") or {}).get("state") == "ready":
+            await self.save_email(m)
+
     def send(self, m, target=None):
         """Starts filing the meeting in Notion in the background."""
         if m.id in self.sending or not m.notes():
@@ -1332,6 +1354,14 @@ async def resume(request):
     return web.json_response(m.summary())
 
 
+async def finish(request):
+    m = find(request)
+    started = request.app["sidecar"].finish(m)
+    if started is None:
+        raise web.HTTPConflict(text="There's no wrap-up yet.")
+    return web.json_response({"started": started, "meeting": m.summary()})
+
+
 async def merge(request):
     app = request.app["sidecar"]
     other = app.meetings.get((await body(request)).get("with", ""))
@@ -1515,6 +1545,7 @@ async def main():
     app.router.add_post("/meeting/end", end)
     app.router.add_post("/meeting/{id}/resume", resume)
     app.router.add_post("/meeting/{id}/merge", merge)
+    app.router.add_post("/meeting/{id}/finish", finish)
     app.router.add_delete("/meeting/{id}", delete)
     app.router.add_get("/meeting/{id}/wrapup", get_wrapup)
     app.router.add_post("/meeting/{id}/wrapup", draft)

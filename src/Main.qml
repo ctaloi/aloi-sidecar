@@ -166,6 +166,10 @@ ApplicationWindow {
         case "copyTranscript":
             engine.copyTranscript(id)
             break
+        case "finish":
+            engine.finish(id)
+            toast.show(qsTr("Filing it in Notion and putting the email in your Outlook Drafts…"))
+            break
         case "merge": {
             // The other half of the same call: nearest in time first.
             const others = engine.meetings
@@ -319,6 +323,7 @@ ApplicationWindow {
     Shortcut { sequence: "T"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { win.view = "meetings"; meetingPane.toggleTab() } }
     Shortcut { sequence: "D"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("draft", win.shown) }
     Shortcut { sequence: "S"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.act("send", win.shown) }
+    Shortcut { sequence: "A"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended" && win.shown.wrapup === "ready" && win.stage !== "sent"; onActivated: win.act("finish", win.shown) }
     Shortcut { sequence: "W"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("email", win.shown) }
     Shortcut { sequence: "O"; context: Qt.ApplicationShortcut; enabled: win.idle && win.stage === "sent"; onActivated: win.act("notion", win.shown) }
     Shortcut { sequence: "C"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("copyNotes", win.shown) }
