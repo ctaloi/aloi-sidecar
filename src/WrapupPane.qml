@@ -53,6 +53,22 @@ Rectangle {
         seeding = false
     }
     Component.onDestruction: flush()
+    // Changes made elsewhere (a tick in Follow-ups or Notion, the to-do links
+    // a send adds) come in whenever Chris isn't in the middle of typing here.
+    onWChanged: Qt.callLater(pickUp)
+    function pickUp() {
+        if (!doc || docFor !== (m.id || "") || save.running || focusInside()) return
+        const fresh = w.edited || w.draft
+        if (!fresh || JSON.stringify(fresh) === JSON.stringify(doc)) return
+        seeding = true
+        doc = JSON.parse(JSON.stringify(fresh))
+        seeding = false
+    }
+    function focusInside() {
+        for (let i = win.activeFocusItem; i; i = i.parent)
+            if (i === root) return true
+        return false
+    }
     // Text typed into a field changes the document in place (no rebuild, so
     // the cursor stays put); adding, removing or ticking rebuilds the lists.
     function touched() { saved.running = false; save.restart() }

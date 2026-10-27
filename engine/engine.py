@@ -367,22 +367,34 @@ class Sidecar:
                 if self.agenda.due():
                     await self.agenda.refresh()
                 now = time.time()
-                for e in self.agenda.starting(now):
-                    if e["id"] not in self.offered and not self.listening and self.settings["calendar_offers"]:
-                        self.offered.add(e["id"])
-                        self.notify(self.offer_meeting(e))
+                # Two meetings at the same time (double-booked) make one offer, not two.
+                fresh = [e for e in self.agenda.starting(now) if e["id"] not in self.offered]
+                if fresh and not self.listening and self.settings["calendar_offers"]:
+                    self.offered.update(e["id"] for e in fresh if e["t0"] == fresh[0]["t0"])
+                    self.notify(self.offer_meeting(fresh[0], [e for e in fresh[1:] if e["t0"] == fresh[0]["t0"]]))
                 for e in self.agenda.begun(now):
-                    on = (self.current.meta.get("event") or {}).get("id") if self.current else None
-                    if self.listening and on != e["id"] and ("switch", e["id"]) not in self.offered:
-                        self.offered.add(("switch", e["id"]))
-                        self.notify(self.offer_switch(self.current, e))
+                    if not (self.listening and self.current) or ("switch", e["id"]) in self.offered:
+                        continue
+                    on = self.current.meta.get("event") or {}
+                    self.offered.add(("switch", e["id"]))
+                    if on.get("id") == e["id"]:
+                        continue
+                    # Only when the meeting being heard is over (or about to be)
+                    # does the next one take over by itself; overlapping or
+                    # unplanned, it's only ever offered.
+                    over = bool(on) and on.get("end", 0) - e["t0"] <= agenda.SLACK
+                    if on and not over and on.get("end", 0) > e["t0"]:
+                        continue  # double-booked: he's in the one he started; don't interrupt
+                    self.notify(self.offer_switch(self.current, e, auto=over))
             except Exception as e:  # the calendar is a nicety; it never takes the engine down
                 print(f"calendar: {e}", file=sys.stderr, flush=True)
             await asyncio.sleep(20)
 
-    async def offer_meeting(self, e):
+    async def offer_meeting(self, e, also=()):
         minutes = max(1, round((e["t0"] - time.time()) / 60))
         who = e.get("organizer") or ""
+        if also:
+            who = (f"{who} · " if who else "") + "also at this time: " + ", ".join(a["subject"] for a in also)
         actions = ([("default", "Join and listen"), ("listen", "Just listen")] if e.get("joinUrl")
                    else [("default", "Listen")]) + [("ignore", "Not now")]
         choice = await calls.notify(f"{e['subject']} in {minutes} min",
@@ -395,12 +407,12 @@ class Sidecar:
         await self.start_meeting(event=agenda.event_meta(e))
         await self.show_window()
 
-    async def offer_switch(self, m, e):
+    async def offer_switch(self, m, e, auto=True):
         asked = time.time()
         choice = await calls.notify(f"{e['subject']} is starting",
-                                    f"Switch from “{m.meta['title']}”? It switches by itself in a minute.",
+                                    f"Switch from “{m.meta['title']}”?" + (" It switches by itself in a minute." if auto else ""),
                                     [("default", "Switch"), ("keep", "Keep this meeting")], timeout=SWITCH_AFTER)
-        if choice == "keep":
+        if choice == "keep" or (choice is None and not auto):
             return
         if choice is None:
             await asyncio.sleep(max(0, SWITCH_AFTER - (time.time() - asked)))
@@ -541,13 +553,33 @@ class Sidecar:
             m.save_wrapup(w)
             self.announce_wrapup(m)
 
-    def edit_wrapup(self, m, edited):
+    def edit_wrapup(self, m, edited, tick=True):
+        """Saves Chris's version of the wrap-up. What the engine keeps on each
+        follow-up (its Notion to-do, when it was ticked) survives a save from
+        a window that didn't have it yet, and a follow-up ticked or unticked
+        here is ticked or unticked on its Notion page too."""
         w = dict(m.wrapup() or {"state": "ready", "draft": None})
-        w["edited"] = {**wrapup.EMPTY, **edited} if edited else None
+        old = (m.notes() or {}).get("mine", [])
+        if edited:
+            edited = {**wrapup.EMPTY, **json.loads(json.dumps(edited))}
+            for i, item in enumerate(edited["mine"]):
+                before = old[i] if i < len(old) and old[i].get("text") == item.get("text") else \
+                    next((o for o in old if o.get("text") == item.get("text")), None)
+                if not before:
+                    continue
+                for key in ("notion", "done_at"):
+                    if key in before and key not in item:
+                        item[key] = before[key]
+                if bool(item.get("done")) != bool(before.get("done")):
+                    item["done_at"] = time.time() if item.get("done") else None
+                    if tick and item.get("notion"):
+                        asyncio.create_task(self._tick(m, i, item["notion"], bool(item.get("done"))))
+        w["edited"] = edited or None
         if w["state"] == "failed" and edited:
             w["state"] = "ready"
         m.save_wrapup(w)
         self.announce_wrapup(m)
+        self.broadcast({"type": "followups"})
 
     # ---- the follow-up email ----
 
@@ -706,13 +738,9 @@ class Sidecar:
         doc = json.loads(json.dumps(m.notes()))
         item = doc["mine"][index]
         item["done"] = bool(done)
-        item["done_at"] = time.time() if done else None
         item.pop("sync_error", None)
-        self.edit_wrapup(m, doc)
-        self.broadcast({"type": "followups"})
+        self.edit_wrapup(m, doc, tick=not from_notion)
         self.broadcast(self.state())
-        if item.get("notion") and not from_notion:
-            asyncio.create_task(self._tick(m, index, item["notion"], done))
 
     async def _tick(self, m, index, block_id, done):
         try:
@@ -721,7 +749,7 @@ class Sidecar:
             doc = json.loads(json.dumps(m.notes()))
             if index < len(doc["mine"]) and doc["mine"][index].get("notion") == block_id:
                 doc["mine"][index]["sync_error"] = str(e) or "Couldn't reach Notion"
-                self.edit_wrapup(m, doc)
+                self.edit_wrapup(m, doc, tick=False)
                 self.broadcast({"type": "followups"})
 
     async def pull_ticks(self):

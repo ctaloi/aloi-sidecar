@@ -157,6 +157,18 @@ def main():
         status, st = call(base, "GET", "/status")
         check("the open count is in the state", st["followups_open"] >= 1, st)
 
+        # A window with a stale copy (no block ids) saves: the ids survive, and
+        # a tick made in the wrap-up itself reaches Notion.
+        stale = json.loads(json.dumps(w["wrapup"]["edited"]))
+        for item in stale["mine"]:
+            item.pop("notion", None)
+        stale["mine"][0]["done"] = True
+        call(base, "PUT", f"/meeting/{mid}/wrapup", {"edited": stale})
+        _, w2 = call(base, "GET", f"/meeting/{mid}/wrapup")
+        check("block ids survive a stale save", w2["wrapup"]["edited"]["mine"][0].get("notion") == block, w2["wrapup"]["edited"]["mine"])
+        wait("tick from the wrap-up", ticked, 10)
+        check("a tick in the wrap-up reaches Notion", ticked())
+
         # A note and a mark land in the transcript, at its end for a meeting that's over.
         status, seg = call(base, "POST", f"/meeting/{mid}/note", {"kind": "note", "text": "check the contract end date"})
         check("a note is a transcript line", status == 200 and seg["speaker"] == "Note" and seg["id"] == 1500, seg)
