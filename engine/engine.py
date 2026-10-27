@@ -254,7 +254,7 @@ class Sidecar:
         self.agenda = agenda.Calendar()
         self.offered = set()  # calendar events already offered, so each is asked about once
         self.watch = calls.CallWatch(lambda: [c.pid for c in self.channels if c.pid],
-                                     self.call_started, self.call_ended)
+                                     self.call_started, self.call_ended, self.sounds_like_call)
         self.ask_blocks = []  # frozen transcript blocks already sent to Claude
         self.ask_sent = 0  # number of segments covered by ask_blocks
         if KEY_FILE.exists():
@@ -325,6 +325,21 @@ class Sidecar:
         if self.listening or not self.settings["watch_calls"]:
             return
         self.notify(self.auto_listen(app))
+
+    def used_events(self):
+        """Calendar meetings a finished recording already had: done with."""
+        return {(m.meta.get("event") or {}).get("id") for m in self.meetings.values() if m.meta["state"] == "ended"}
+
+    async def sounds_like_call(self, app):
+        """A call app is playing sound but nothing has the mic: joined muted,
+        or a video. It's a call when the calendar says one is starting now
+        (and hasn't been had), or a call window names one of today's."""
+        if self.listening or not self.settings["watch_calls"]:
+            return False
+        seen = await calls.context()
+        used = self.used_events()
+        return bool(self.agenda.matching(seen.get("title"), used=used)
+                    or (seen.get("app") and self.agenda.happening(used=used)))
 
     async def call_ended(self, app):
         """The call let go of the mic. A meeting that's listening ends by
@@ -486,8 +501,7 @@ class Sidecar:
         seen = {}
         if not title and not event:
             seen = await calls.context() if self.call else {}
-            # A calendar meeting a finished recording already had is done with.
-            used = {(m.meta.get("event") or {}).get("id") for m in self.meetings.values() if m.meta["state"] == "ended"}
+            used = self.used_events()
             on = self.agenda.matching(seen.get("title"), used=used) or self.agenda.happening(used=used)
             event = agenda.event_meta(on) if on else None
         if not title and not event and seen.get("title"):

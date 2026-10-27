@@ -142,6 +142,36 @@ async def main():
     check("wrap-up line numbers follow their lines", kept.wrapup()["draft"]["mine"][0]["at"] == 2)
     check("a merged transcript survives a reload", [s["text"] for s in E.Meeting.load(kept.folder).segments][-1] == "Second half.")
 
+    # Joined muted: only the call app's sound. It counts when the engine
+    # agrees it's a call, and the call ends when the sound does.
+    calls.HOLD, calls.RELEASE = 0.05, 0.1
+    mic, sound, asked, events = {}, {}, [], []
+
+    class Watch(calls.CallWatch):
+        async def users(self): return dict(mic)
+        async def players(self): return dict(sound)
+
+    async def start(app): events.append(("start", app))
+    async def end(app): events.append(("end", app))
+    verdict = [False]
+    async def is_call(app):
+        asked.append(app)
+        return verdict[0]
+    calls.window_name = lambda: asyncio.sleep(0, result=None)
+    w = Watch(lambda: [], start, end, is_call)
+    sound[1] = "Chromium"
+    await w.check(); await asyncio.sleep(0.08); await w.check()
+    check("sound alone that isn't a call starts nothing", events == [] and asked == ["Chromium"])
+    await asyncio.sleep(0.08); await w.check()
+    check("and it isn't asked about again", asked == ["Chromium"])
+    sound.clear(); await w.check()
+    verdict[0] = True
+    sound[2] = "Chromium"
+    await w.check(); await asyncio.sleep(0.08); await w.check()
+    check("a call app's sound the engine calls a call starts one", events == [("start", "Chromium")] and w.by_sound)
+    sound.clear(); await w.check(); await asyncio.sleep(0.15); await w.check()
+    check("and it ends when the sound does", events[-1] == ("end", "Chromium"))
+
     # Search finds what was said, in any meeting.
     found = app.search("thanks BYE")
     check("search finds a line by its words, any case", len(found) == 1 and found[0]["hits"][0]["text"] == "Thanks, bye.")

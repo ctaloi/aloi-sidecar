@@ -16,6 +16,9 @@ HOLD = 4  # seconds a stream must last before it counts; dictation and mic check
 RELEASE = 8  # seconds the mic must stay free before a call counts as over; rides out device switches
 CALL_APPS = ("Teams", "Zoom", "Google Meet", "Slack", "Discord", "Webex", "WhatsApp")
 IGNORE = ("superwhisper", "pavucontrol", "easyeffects", "cava", "wireplumber", "aloi-sidecar")
+# Apps whose sound can be a call: joined muted, Teams in a browser lets go of
+# the mic altogether, and the other side's voice is the only sign.
+PLAYERS = ("chromium", "chrome", "firefox", "teams", "zoom", "slack", "discord", "webex", "whatsapp")
 
 
 async def run(*args):
@@ -95,14 +98,33 @@ def describe(props):
 
 class CallWatch:
     """Calls on_start(app) when a call seems to begin and on_end(app) when it
-    seems over. own() returns the process ids of Sidecar's own recorders."""
+    seems over. own() returns the process ids of Sidecar's own recorders.
+    A call app playing sound without the mic (joined muted) only counts when
+    is_call(app) agrees, since a browser playing a video sounds the same."""
 
-    def __init__(self, own, on_start, on_end):
-        self.own, self.on_start, self.on_end = own, on_start, on_end
+    def __init__(self, own, on_start, on_end, is_call=None):
+        self.own, self.on_start, self.on_end, self.is_call = own, on_start, on_end, is_call
         self.seen = {}  # stream index -> (first seen, app)
+        self.heard = {}  # playback stream index -> (first seen, app)
+        self.passed = set()  # playback streams is_call said no to
         self.active = None  # the app in a call, once on_start has fired
+        self.by_sound = False  # started from playback rather than the mic
         self.free_since = None
         self.wake = asyncio.Event()
+
+    async def players(self):
+        """Call apps playing sound right now."""
+        try:
+            inputs = json.loads(await run("pactl", "-f", "json", "list", "sink-inputs") or "[]")
+        except (json.JSONDecodeError, FileNotFoundError):
+            return {}
+        out = {}
+        for i in inputs:
+            p = i.get("properties", {})
+            who = " ".join(str(p.get(k, "")) for k in ("application.name", "application.process.binary")).lower()
+            if not i.get("corked") and any(k in who for k in PLAYERS):
+                out[i["index"]] = describe(p)
+        return out
 
     async def users(self):
         """Recording streams that could be a call."""
@@ -129,13 +151,25 @@ class CallWatch:
         users = await self.users()
         self.seen = {i: self.seen.get(i, (now, app)) for i, app in users.items()}
         lasting = [app for first, app in self.seen.values() if now - first >= HOLD]
+        players = await self.players() if self.is_call else {}
+        self.heard = {i: self.heard.get(i, (now, app)) for i, app in players.items()}
+        self.passed &= set(players)
+        sounding = [(i, app) for i, (first, app) in self.heard.items() if now - first >= HOLD and i not in self.passed]
         if self.active is None:
             if lasting:
                 self.active = (await window_name()) or lasting[0]
+                self.by_sound = False
                 self.free_since = None
                 await self.on_start(self.active)
-            return bool(self.seen)  # something new is still proving itself
-        if users:
+            elif sounding:
+                app = (await window_name()) or sounding[0][1]
+                if await self.is_call(app):
+                    self.active, self.by_sound, self.free_since = app, True, None
+                    await self.on_start(app)
+                else:
+                    self.passed.update(i for i, _ in sounding)
+            return bool(self.seen) or any(i not in self.passed for i in self.heard)  # still proving itself
+        if users or (self.by_sound and players):
             self.free_since = None
             return False
         self.free_since = self.free_since or now
@@ -170,7 +204,7 @@ class CallWatch:
                 return
             try:
                 async for line in proc.stdout:
-                    if b"source-output" in line:
+                    if b"source-output" in line or b"sink-input" in line:
                         self.wake.set()
             finally:
                 if proc.returncode is None:
