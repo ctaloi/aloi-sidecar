@@ -56,7 +56,8 @@ def main():
     on = cal.happening(now)
     check("a call now is the meeting that's on", on and on["id"] == "b", on)
     check("a meeting under way wins over one about to start", cal.happening(now + 85)["id"] == "b")
-    check("near the end of one, a call is the next", cal.happening(now + 1500)["id"] == "d")
+    check("well into two slots, a call is neither", cal.happening(now + 1500) is None)
+    check("just before one starts, a call is that one", cal.happening(now + 30)["id"] in ("b", "d"))
     check("a call just before a meeting is that meeting", cal.happening(now + 3900)["id"] == "g")
     check("nothing on, nothing named", cal.happening(now + 6000) is None)
     check("what's about to start", [e["id"] for e in cal.starting(now)] == ["d"])
@@ -66,6 +67,7 @@ def main():
           meta["subject"] == "Northwind weekly" and abs(meta["start"] - (now - 120)) < 2 and meta["joinUrl"].startswith("https://"))
     check("people leave out Chris", agenda.people(meta, "Chris") == ["Amy Reed"])
     check("normalizing twice changes nothing", agenda.normalize(agenda.normalize(events[1])) == agenda.normalize(events[1]))
+    check("a call well into a slot isn't taken for that meeting", cal.happening(now + 26 * 60) is None or cal.happening(now + 26 * 60)["id"] != "b")
     check("a meeting already had isn't the next call in its slot", cal.happening(now, used={"b"}) is None or cal.happening(now, used={"b"})["id"] != "b")
     check("nor is it matched from a window", cal.matching("Northwind Weekly", used={"b"}) is None)
     check("a Teams window names its meeting, matched to the calendar",

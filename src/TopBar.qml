@@ -21,6 +21,26 @@ Rectangle {
         anchors.rightMargin: 14
         spacing: 18
 
+        // The meetings: a column in a wide window, a drawer in a narrow one.
+        Rectangle {
+            implicitWidth: 30; implicitHeight: 30
+            radius: Math.min(4, theme.radius)
+            color: menuHover.hovered ? ui.hover : "transparent"
+            Column {
+                anchors.centerIn: parent
+                spacing: 3
+                Repeater {
+                    model: 3
+                    Rectangle { width: 14; height: 2; radius: 1; color: menuHover.hovered ? ui.text : ui.muted }
+                }
+            }
+            HoverHandler { id: menuHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: bar.toggleList() }
+            ToolTip.visible: menuHover.hovered
+            ToolTip.delay: 400
+            ToolTip.text: qsTr("Meetings (\\)")
+        }
+
         // The mark: the logo, whose wave moves while listening, and the name
         // in the Omarchy way.
         Row {

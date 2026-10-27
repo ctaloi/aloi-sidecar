@@ -184,6 +184,12 @@ int main(int argc, char *argv[]) {
     window->findChild<QObject *>("search")->setProperty("text", "port");
     shot("search", 900);
     window->findChild<QObject *>("search")->setProperty("text", "");
+    if (window->width() < 1100) {
+        QMetaObject::invokeMethod(window->findChild<QObject *>("listDrawer"), "open");
+        shot("drawer", 600);
+        QMetaObject::invokeMethod(window->findChild<QObject *>("listDrawer"), "close");
+        wait(400);
+    }
     window->setProperty("view", "followups");
     shot("followups", 900);
 

@@ -18,6 +18,7 @@ from pathlib import Path
 REFRESH = 5 * 60  # seconds between asking Microsoft 365
 LEAD = 2 * 60  # how long before a meeting the "about to start" offer comes
 SLACK = 5 * 60  # a call this close to a meeting's start counts as that meeting
+JOIN = 10 * 60  # a call starting later than this into a slot is something else (the window's name still matches)
 CANDIDATES = [
     Path.home() / ".config/omarchy/plugins/aloi.meetings/bin/aloi-meetings",
     Path.home() / "Work/meetings/bin/aloi-meetings",
@@ -89,9 +90,11 @@ class Calendar:
         were already had (an earlier call ended under that name) and aren't
         it: a second call in the same slot is a different conversation."""
         t = t or time.time()
-        on = [e for e in self.events if e["t0"] - SLACK <= t < e["t1"] and e["id"] not in used]
+        on = [e for e in self.events if e["t0"] - SLACK <= t < min(e["t1"], e["t0"] + JOIN) and e["id"] not in used]
         # One under way wins, unless it's nearly over (then the call is
-        # more likely the next one); otherwise the one about to start.
+        # more likely the next one); otherwise the one about to start. A call
+        # well into a slot isn't taken for it: by then it's usually another
+        # conversation, and a late join still matches by the call window.
         running = [e for e in on if e["t0"] <= t and e["t1"] - t > SLACK]
         if running:
             return max(running, key=lambda e: e["t0"])

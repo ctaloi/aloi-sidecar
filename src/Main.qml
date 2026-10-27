@@ -48,8 +48,15 @@ ApplicationWindow {
         engine.select(id)
         if (at >= 0) meetingPane.showLineWhenLoaded(at)
     }
-    // The list folds away by hand (\), or by itself when there isn't room for three columns.
+    // The list folds away by hand (\), or by itself when there isn't room
+    // for it; then the same button and key slide it in as a drawer.
     property bool listHidden: false
+    readonly property bool listFits: width >= 1100
+    function toggleList() {
+        if (listFits) listHidden = !listHidden
+        else if (listDrawer.opened) listDrawer.close()
+        else listDrawer.open()
+    }
     // Searching shows the list at any width; in a narrow window the results
     // take the meeting's place until one is picked.
     readonly property bool searching: topBar.search.text.trim().length >= 2
@@ -222,7 +229,7 @@ ApplicationWindow {
 
     header: TopBar {
         id: topBar
-        onToggleList: win.listHidden = !win.listHidden
+        onToggleList: win.toggleList()
     }
 
     RowLayout {
@@ -265,6 +272,30 @@ ApplicationWindow {
         }
     }
 
+    Drawer {
+        id: listDrawer
+        objectName: "listDrawer"
+        edge: Qt.LeftEdge
+        y: topBar.height
+        width: Math.min(340, win.width * 0.85)
+        height: win.height - topBar.height
+        modal: true
+        interactive: !win.listFits
+        padding: 0
+        background: Rectangle { color: ui.window }
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.45) }
+        MeetingList {
+            anchors.fill: parent
+            filter: topBar.search.text
+            now: win.now
+        }
+        // Picking a meeting is what it was opened for.
+        Connections {
+            target: engine
+            function onSelectedChanged() { if (listDrawer.opened) listDrawer.close() }
+        }
+    }
+
     KeysOverlay { id: keys; objectName: "keys" }
     CommandPalette { id: palette; objectName: "palette" }
     Toast { id: toast }
@@ -281,7 +312,7 @@ ApplicationWindow {
     Shortcut { sequence: "J"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingList.step(1) }
     Shortcut { sequence: "K"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingList.step(-1) }
     Shortcut { sequence: "G"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: engine.select(engine.current) }
-    Shortcut { sequence: "\\"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.listHidden = !win.listHidden }
+    Shortcut { sequence: "\\"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.toggleList() }
     Shortcut { sequence: "R"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.rename() }
     Shortcut { sequence: "E"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: win.act("end", engine.meetingById(engine.current)) }
     Shortcut { sequence: "F"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.view = win.view === "followups" ? "meetings" : "followups" }
