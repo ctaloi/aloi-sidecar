@@ -162,9 +162,10 @@ Rectangle {
         // answers will be.
         Item {
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            implicitHeight: intro.implicitHeight + 36
             visible: agent.messages.length === 0
             Column {
+                id: intro
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
@@ -264,6 +265,9 @@ Rectangle {
             Layout.rightMargin: 14
             Layout.topMargin: 6
         }
+        // Before the first question the takeaways sit under the intro; after
+        // it, the answers take the room above them.
+        Item { Layout.fillHeight: true; visible: agent.messages.length === 0 }
 
         Flow {
             id: chipRow

@@ -11,6 +11,11 @@ Rectangle {
     color: ui.window
 
     readonly property bool following: list.stick
+    // With one other person in the meeting, the other side has their name.
+    readonly property string them: {
+        const people = engine.selectedMeeting.people || []
+        return people.length === 1 ? people[0].split(" ")[0] : qsTr("Them")
+    }
     function toLive() { list.stick = true; list.positionViewAtEnd() }
     // Scroll to a line (from a wrap-up item) and light it up for a moment.
     function showLine(id) {
@@ -105,10 +110,11 @@ Rectangle {
                 y: body.y
                 width: 56
                 visible: !row.sameAsAbove || row.isMark
-                text: row.mine ? qsTr("Me") : row.isNote ? qsTr("Note") : row.isMark ? "⚑" : qsTr("Them")
+                text: row.mine ? qsTr("Me") : row.isNote ? qsTr("Note") : row.isMark ? "⚑" : pane.them
                 color: row.mine ? ui.me : row.isNote || row.isMark ? theme.accent : ui.them
                 font.pixelSize: 13
                 font.bold: true
+                elide: Text.ElideRight
             }
             TextEdit {
                 id: body
@@ -146,7 +152,7 @@ Rectangle {
                     Text {
                         x: 86
                         y: 5
-                        text: modelData.speaker === "Them" ? qsTr("Them") : qsTr("Me")
+                        text: modelData.speaker === "Them" ? pane.them : qsTr("Me")
                         color: ui.alpha(modelData.speaker === "Them" ? ui.them : ui.me, 0.6)
                         font.pixelSize: 13
                         font.bold: true
