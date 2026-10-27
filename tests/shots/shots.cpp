@@ -183,6 +183,9 @@ int main(int argc, char *argv[]) {
     }
     shot("palette-typed", 300);
     QMetaObject::invokeMethod(palette, "close");
+    QMetaObject::invokeMethod(window, "act", Q_ARG(QVariant, QStringLiteral("merge")), Q_ARG(QVariant, engine.meetingById("past-0")));
+    shot("merge", 400);
+    QMetaObject::invokeMethod(palette, "close");
     window->findChild<QObject *>("search")->setProperty("text", "port");
     shot("search", 900);
     window->findChild<QObject *>("search")->setProperty("text", "");

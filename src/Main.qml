@@ -174,6 +174,28 @@ ApplicationWindow {
         case "copyTranscript":
             engine.copyTranscript(id)
             break
+        case "merge": {
+            // The other half of the same call: nearest in time first.
+            const others = engine.meetings
+                .filter(o => o.id !== id && o.id !== engine.current)
+                .sort((a, b) => Math.abs(a.started - m.started) - Math.abs(b.started - m.started))
+                .map(o => ({
+                    label: o.title || qsTr("Untitled"),
+                    detail: Sidecar.dayLabel(o) + "  ·  " + Sidecar.span(o) + "  ·  " + qsTr("%n lines", "", o.lines || 0),
+                    run: () => {
+                        const first = o.started < m.started ? o : m
+                        const second = first === o ? m : o
+                        confirm.ask({
+                            title: qsTr("Merge “%1” and “%2”?").arg(m.title).arg(o.title),
+                            detail: qsTr("“%1”, the earlier, keeps its title and gets both transcripts in time order. “%2” goes to the trash folder. The wrap-up is drafted again over the whole call; your edits stay.").arg(first.title).arg(second.title),
+                            confirm: qsTr("Merge"),
+                            run: () => engine.merge(m.id, o.id)
+                        })
+                    }
+                }))
+            palette.choose(qsTr("Merge “%1” with…").arg(m.title), others)
+            break
+        }
         case "skip":
             engine.setSkipped(id, !m.skipped)
             toast.show(m.skipped ? qsTr("Back in Needs wrap-up") : qsTr("Marked as needing no wrap-up"))

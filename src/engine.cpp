@@ -468,6 +468,25 @@ void Engine::resume(const QString &id) {
     post(path(id, "/resume"), {});
 }
 
+void Engine::merge(const QString &id, const QString &other) {
+    QNetworkRequest request(m_url.resolved(QUrl(path(id, "/merge"))));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    QNetworkReply *reply = m_network.post(request, QJsonDocument(QJsonObject{{"with", other}}).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const QByteArray data = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError) {
+            setError(data.isEmpty() ? reply->errorString() : QString::fromUtf8(data));
+            return;
+        }
+        // The kept meeting's transcript changed under it: load it afresh.
+        const QString kept = QJsonDocument::fromJson(data).object().value("id").toString();
+        m_selected.clear();
+        select(kept);
+        emit copied(tr("Merged into one meeting; its wrap-up is being drafted again."));
+    });
+}
+
 void Engine::remove(const QString &id) {
     post(path(id), {}, "DELETE");
 }

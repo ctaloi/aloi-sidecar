@@ -66,6 +66,11 @@ SideMenu {
         visible: !menu.isCurrent && menu.stage !== "sent"
         onTriggered: win.act("skip", menu.m)
     }
+    MenuRow {
+        text: qsTr("Merge with another meeting…")
+        visible: !menu.isCurrent
+        onTriggered: win.act("merge", menu.m)
+    }
     MenuRow { text: qsTr("Show its files"); visible: !!menu.m.id; onTriggered: win.act("files", menu.m) }
     MenuRow {
         text: qsTr("Delete meeting…")

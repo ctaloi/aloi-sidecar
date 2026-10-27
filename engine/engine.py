@@ -539,6 +539,54 @@ class Sidecar:
         await self.set_listening(True)
         return m
 
+    def merge_meetings(self, a, b):
+        """Two meetings that were one call (split by a restart, a dropped
+        line, a pause too long): the earlier one keeps its title and gets
+        both transcripts in time order, the other goes to the trash, and the
+        wrap-up is drafted again over the whole of it, keeping any edits."""
+        if a is b or self.current in (a, b) or a.id in self.sending or b.id in self.sending:
+            return None
+        keep, other = sorted((a, b), key=lambda m: m.meta["started"])
+        for m in (keep, other):
+            task = self.drafting.pop(m.id, None)
+            if task:
+                task.cancel()
+        tagged = [(s, True) for s in keep.segments] + [(s, False) for s in other.segments]
+        tagged.sort(key=lambda x: x[0]["start"])
+        remap, merged = {}, []
+        for i, (s, ours) in enumerate(tagged):
+            if ours:
+                remap[s.get("id", i)] = i
+            merged.append({**s, "id": i})
+        keep.close()
+        keep.folder.mkdir(parents=True, exist_ok=True)
+        tmp = keep.folder / "transcript.jsonl.tmp"
+        tmp.write_text("".join(json.dumps(s) + "\n" for s in merged))
+        tmp.replace(keep.folder / "transcript.jsonl")
+        keep._segments = merged
+
+        def moved(o):  # a wrap-up's line numbers follow the lines they point at
+            if isinstance(o, dict):
+                return {k: (remap.get(v, v) if k == "at" and isinstance(v, int) and v >= 0 else moved(v)) for k, v in o.items()}
+            return [moved(x) for x in o] if isinstance(o, list) else o
+        w = keep.wrapup()
+        if w:
+            if w.get("state") == "drafting":
+                w.update(state="failed", error="Merged while drafting.")
+            keep.save_wrapup(moved(w))
+        meta = keep.meta
+        meta["ended"] = max(x for x in (meta.get("ended"), other.meta.get("ended")) if x) if (meta.get("ended") or other.meta.get("ended")) else None
+        meta["people"] = list(dict.fromkeys((meta.get("people") or []) + (other.meta.get("people") or [])))
+        meta["event"] = meta.get("event") or other.meta.get("event")
+        meta["merged"] = (meta.get("merged") or []) + [{"id": other.id, "title": other.meta["title"]}]
+        keep.save()
+        self.delete_meeting(other)
+        self.announce(keep)
+        self.broadcast(self.state())
+        if (meta.get("notion") or {}).get("state") != "sent" and keep.lines() >= wrapup.MIN_LINES:
+            self.draft(keep)
+        return keep
+
     def delete_meeting(self, m):
         """Moves a meeting to the trash folder. The one that's on can't go."""
         if m is self.current or m.id in self.sending:
@@ -1200,6 +1248,17 @@ async def resume(request):
     return web.json_response(m.summary())
 
 
+async def merge(request):
+    app = request.app["sidecar"]
+    other = app.meetings.get((await body(request)).get("with", ""))
+    if not other:
+        raise web.HTTPNotFound(text="No such meeting to merge with.")
+    m = app.merge_meetings(find(request), other)
+    if not m:
+        raise web.HTTPConflict(text="End the meeting that's on (and let any Notion send finish) before merging.")
+    return web.json_response(m.summary())
+
+
 async def delete(request):
     if not request.app["sidecar"].delete_meeting(find(request)):
         raise web.HTTPConflict(text="End the meeting before deleting it.")
@@ -1358,6 +1417,7 @@ async def main():
     app.router.add_post("/meeting/start", start)
     app.router.add_post("/meeting/end", end)
     app.router.add_post("/meeting/{id}/resume", resume)
+    app.router.add_post("/meeting/{id}/merge", merge)
     app.router.add_delete("/meeting/{id}", delete)
     app.router.add_get("/meeting/{id}/wrapup", get_wrapup)
     app.router.add_post("/meeting/{id}/wrapup", draft)

@@ -54,7 +54,18 @@ Popup {
         return s
     }
 
+    // Also a picker: choose(prompt, [{label, detail, run}]) lists just those.
+    property string prompt: ""
+    function choose(p, items) {
+        prompt = p
+        entries = items.map(x => Object.assign({ group: "pick", keys: "" }, x))
+        field.text = ""
+        open()
+        field.forceActiveFocus()
+    }
+
     function show() {
+        prompt = ""
         build()
         field.text = ""
         open()
@@ -110,6 +121,8 @@ Popup {
                 add("action", qsTr("Continue this meeting"), "", () => win.act("listen", m))
             add("action", qsTr("Show its files"), "", () => win.act("files", m))
             if (!current)
+                add("action", qsTr("Merge with another meeting"), "", () => win.act("merge", m))
+            if (!current)
                 add("action", qsTr("Delete the meeting"), "del", () => win.act("delete", m), { danger: true })
         }
 
@@ -159,7 +172,7 @@ Popup {
                 Label {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: field.text === ""
-                    text: qsTr("Do something, or go to a meeting…")
+                    text: popup.prompt !== "" ? popup.prompt : qsTr("Do something, or go to a meeting…")
                     color: ui.faint
                     font.pixelSize: 15
                 }
@@ -200,7 +213,7 @@ Popup {
                     leftPadding: 18
                     topPadding: row.index === 0 ? 6 : 12
                     bottomPadding: 4
-                    text: ({ live: qsTr("On now"), action: qsTr("On screen"), app: qsTr("Sidecar"), setting: qsTr("Settings"), meeting: qsTr("Meetings") })[row.modelData.group].toUpperCase()
+                    text: ({ live: qsTr("On now"), action: qsTr("On screen"), app: qsTr("Sidecar"), setting: qsTr("Settings"), meeting: qsTr("Meetings"), pick: qsTr("Pick one") })[row.modelData.group].toUpperCase()
                           + (row.modelData.group === "action" && win.shown.title ? "   " + win.shown.title
                              : row.modelData.group === "live" && engine.current !== "" ? "   " + (engine.meetingById(engine.current).title || "") : "")
                     elide: Text.ElideRight

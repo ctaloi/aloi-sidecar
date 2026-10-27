@@ -118,6 +118,30 @@ async def main():
     check("after a restart mid-call, the same meeting carries on", app.current is m5 and app.listening)
     await app.end_meeting()
 
+    # Two meetings that were one call merge into the earlier one.
+    import engine as E
+    first = E.Meeting.create("Dialer review")
+    first.meta.update(state="ended", started=100, ended=200, people=["Ali"])
+    first._segments = []
+    for t, text in ((110, "First half."), (190, "Still first.")):
+        first.append({"speaker": "Them", "start": t, "end": t + 1, "text": text})
+    first.close(); first.save()
+    first.save_wrapup({"state": "ready", "draft": {"mine": [{"text": "x", "at": 1}]}, "edited": None})
+    second = E.Meeting.create("(3) Chat")
+    second.meta.update(state="ended", started=300, ended=400, people=["Greg"])
+    second._segments = []
+    second.append({"speaker": "Them", "start": 150, "end": 151, "text": "In between."})
+    second.append({"speaker": "Them", "start": 310, "end": 311, "text": "Second half."})
+    second.close(); second.save()
+    app.meetings[first.id], app.meetings[second.id] = first, second
+    kept = app.merge_meetings(second, first)
+    check("merging keeps the earlier meeting and its title", kept is first and kept.meta["title"] == "Dialer review")
+    check("the lines interleave in time", [s["text"] for s in kept.segments] == ["First half.", "In between.", "Still first.", "Second half."])
+    check("the other meeting goes to the trash", second.id not in app.meetings and not second.folder.exists())
+    check("people from both, end from the later", kept.meta["people"] == ["Ali", "Greg"] and kept.meta["ended"] == 400)
+    check("wrap-up line numbers follow their lines", kept.wrapup()["draft"]["mine"][0]["at"] == 2)
+    check("a merged transcript survives a reload", [s["text"] for s in E.Meeting.load(kept.folder).segments][-1] == "Second half.")
+
     # Search finds what was said, in any meeting.
     found = app.search("thanks BYE")
     check("search finds a line by its words, any case", len(found) == 1 and found[0]["hits"][0]["text"] == "Thanks, bye.")

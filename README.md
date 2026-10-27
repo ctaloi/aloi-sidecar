@@ -111,6 +111,7 @@ The agent runs like Aloi Tix's: `claude -p` in
 | `Ctrl+F` | Search what was said, in every meeting (Enter opens the first hit) |
 | `/` | Ask about the meeting on screen |
 | `]` | Fold away or show the transcript and notes (drag its edge to resize) |
+| Right-click → Merge | Two meetings that were one call become one (the earlier keeps its title) |
 | `1`–`4` | Ask a suggested question |
 | `Ctrl+A` | (in the ask box) The next question goes across all meetings |
 | `Esc` | Stop the agent, leave the ask box |
