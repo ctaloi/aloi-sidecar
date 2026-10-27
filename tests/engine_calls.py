@@ -103,6 +103,21 @@ async def main():
     check("Not now on a new call stops it", app.current is None and not app.listening)
     check("and keeps nothing of it", set(app.meetings) == before)
 
+    # The engine restarted mid-call: the call carries on in the same meeting.
+    answers[:] = [None]
+    await app.call_started("Teams")
+    await app.prompt
+    m5 = app.current
+    app.listening = False
+    m5.meta["state"] = "paused"
+    m5.meta["recovered"] = True
+    app.call = None
+    answers[:] = [None]
+    await app.call_started("Teams")
+    await app.prompt
+    check("after a restart mid-call, the same meeting carries on", app.current is m5 and app.listening)
+    await app.end_meeting()
+
     # Search finds what was said, in any meeting.
     found = app.search("thanks BYE")
     check("search finds a line by its words, any case", len(found) == 1 and found[0]["hits"][0]["text"] == "Thanks, bye.")

@@ -72,7 +72,9 @@ def main():
     check("an unrelated name matches nothing", cal.matching("Simply Support") is None)
     import calls
     check("a Teams meeting window gives its name", calls.meeting_title("Teams", "Weekly sync | Microsoft Teams") == "Weekly sync")
-    check("a Teams chat isn't a meeting", calls.meeting_title("Teams", "Chat | Simply Support | Microsoft Teams") is None)
+    check("a meeting's chat names the meeting, unread count and all",
+          calls.meeting_title("Teams", "(3) Chat | Vaspian Voice Broadcast Dialer Review | Microsoft Teams") == "Vaspian Voice Broadcast Dialer Review")
+    check("Teams' own pages name nothing", calls.meeting_title("Teams", "(12) Activity | Microsoft Teams") is None)
     check("Zoom's own window names nothing", calls.meeting_title("Zoom", "Zoom Meeting") is None)
     check("Meet in a browser gives its name", calls.meeting_title("Google Meet", "Meet - Collections Software Review - Chromium") == "Collections Software Review")
     os.environ["SIDECAR_CALENDAR"] = ""

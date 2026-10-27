@@ -14,7 +14,13 @@ sed "s|@ENGINE@|$ROOT/engine|g" "$ROOT/engine/aloi-sidecar-engine.service" > "$U
 mv "$UNIT.tmp" "$UNIT"
 systemctl --user daemon-reload
 systemctl --user enable aloi-sidecar-engine.service
-systemctl --user restart aloi-sidecar-engine.service
+# Never in the middle of a meeting: a restart would cut it in two.
+if curl -s --max-time 2 http://127.0.0.1:8777/status | grep -q '"listening": true'; then
+    echo "Sidecar is listening, so the engine wasn't restarted. Once the call is over:"
+    echo "  systemctl --user restart aloi-sidecar-engine"
+else
+    systemctl --user restart aloi-sidecar-engine.service
+fi
 
 "$ROOT/bin/build"
 cd "$ROOT/pkgbuild"

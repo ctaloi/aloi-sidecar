@@ -9,6 +9,7 @@ enough to be a call rather than a quick probe.
 import asyncio
 import json
 import os
+import re
 import time
 
 HOLD = 4  # seconds a stream must last before it counts; dictation and mic checks are shorter
@@ -49,12 +50,14 @@ APP_KEYS = (("teams", "Teams"), ("zoom", "Zoom"), ("meet.google", "Google Meet")
 
 def meeting_title(app, title):
     """The meeting's name out of a call app's window title: "Weekly sync |
-    Microsoft Teams" -> "Weekly sync"; "Chat | Simply Support | Microsoft
-    Teams" -> None, since that's a chat, not a call."""
+    Microsoft Teams" -> "Weekly sync"; "(3) Chat | Weekly sync | Microsoft
+    Teams", the meeting's chat during the call, -> "Weekly sync" too. The
+    calendar, when it has the meeting, still wins over this."""
+    title = re.sub(r"^\(\d+\)\s*", "", title)  # "(3) Chat | …": the unread count
     parts = [p.strip() for p in title.replace(" - ", " | ").split("|")]
     parts = [p for p in parts if p and p.lower() not in GENERIC and "microsoft teams" not in p.lower()
              and not p.lower().startswith(("chromium", "google chrome", "firefox"))]
-    if not parts or (app == "Teams" and title.lower().startswith("chat")):
+    if not parts:
         return None
     name = parts[0]
     for lead in ("Meeting in ", "Meeting with "):

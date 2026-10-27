@@ -274,6 +274,7 @@ class Sidecar:
                 continue
             if self.current is None and time.time() - m.last_line_end() < RECOVER_WINDOW:
                 m.meta["state"] = "paused"
+                m.meta["recovered"] = True  # a call still going picks it back up
                 self.current = m
             else:
                 m.meta["state"] = "ended"
@@ -341,7 +342,13 @@ class Sidecar:
         self.prompt = asyncio.create_task(coro) if coro else None
 
     async def auto_listen(self, app):
-        m = await self.start_meeting()
+        m = self.current
+        if m and m.meta.get("recovered"):
+            # The engine restarted mid-call: the call is the same meeting.
+            m.meta.pop("recovered", None)
+            await self.set_listening(True)
+        else:
+            m = await self.start_meeting()
         choice = await calls.notify(f"Recording “{m.meta['title']}”",
                                     f"{app} is using your mic, so Sidecar is listening. Not now stops and discards it.",
                                     [("default", "Open Sidecar"), ("discard", "Not now")])
