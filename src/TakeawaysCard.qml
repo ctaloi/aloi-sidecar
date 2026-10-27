@@ -1,0 +1,110 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import "sidecar.js" as Sidecar
+
+// While the call goes on: what Chris has committed to, what he's been asked
+// and hasn't answered, what's decided and what's open, kept current by
+// Haiku every couple of minutes. A glance, not a read; each item jumps to
+// where it was said.
+Rectangle {
+    id: card
+    property double now: Date.now()
+    readonly property var t: engine.takeaways
+    readonly property bool live: engine.selected !== "" && engine.selected === engine.current
+    readonly property var sections: [
+        { key: "asked", title: qsTr("Asked, not answered"), tone: ui.live },
+        { key: "mine", title: qsTr("You said you'd"), tone: theme.accent },
+        { key: "decisions", title: qsTr("Decided"), tone: ui.them },
+        { key: "questions", title: qsTr("Open"), tone: ui.muted }
+    ]
+    readonly property int total: sections.reduce((n, s) => n + ((t[s.key] || []).length), 0)
+    property bool open: true
+
+    visible: live && total > 0
+    implicitHeight: column.implicitHeight + 20
+    radius: Math.min(6, theme.radius)
+    color: ui.window
+    border.color: ui.line
+
+    ColumnLayout {
+        id: column
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 10
+        anchors.leftMargin: 14
+        spacing: 8
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+            Label {
+                text: qsTr("TAKEAWAYS")
+                color: ui.muted
+                font.pixelSize: 10
+                font.letterSpacing: 1.4
+                font.bold: true
+            }
+            Label {
+                Layout.fillWidth: true
+                text: card.t.updated ? qsTr("as of %1").arg(Sidecar.clock(card.t.updated)) : ""
+                color: ui.faint
+                font.pixelSize: 10
+            }
+            Label {
+                text: card.open ? "▾" : "▸"
+                color: ui.faint
+                font.pixelSize: 11
+            }
+        }
+
+        Flickable {
+            Layout.fillWidth: true
+            Layout.preferredHeight: Math.min(lists.implicitHeight, 260)
+            visible: card.open
+            contentHeight: lists.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ColumnLayout {
+                id: lists
+                width: parent.width
+                spacing: 8
+                Repeater {
+                    model: card.sections
+                    delegate: ColumnLayout {
+                        id: section
+                        required property var modelData
+                        readonly property var items: card.t[modelData.key] || []
+                        visible: items.length > 0
+                        Layout.fillWidth: true
+                        spacing: 3
+                        Label {
+                            text: section.modelData.title
+                            color: section.modelData.tone
+                            font.pixelSize: 11
+                            font.bold: true
+                        }
+                        Repeater {
+                            model: section.items
+                            delegate: Label {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                text: "· " + modelData.text
+                                color: itemHover.hovered ? ui.text : ui.muted
+                                font.pixelSize: 12
+                                wrapMode: Text.Wrap
+                                HoverHandler { id: itemHover; cursorShape: modelData.at >= 0 ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                                TapHandler { onTapped: if (modelData.at >= 0) meetingPane.showLine(modelData.at) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    TapHandler {
+        // The header folds it away.
+        onTapped: (point) => { if (point.position.y < 30) card.open = !card.open }
+    }
+}

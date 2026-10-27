@@ -302,6 +302,11 @@ void Engine::handleEvent(const QJsonObject &event) {
             m_wrapup = event.value("wrapup").toObject().toVariantMap();
             emit wrapupChanged();
         }
+    } else if (type == "takeaways") {
+        if (event.value("id").toString() == m_selected) {
+            m_takeaways = event.value("takeaways").toObject().toVariantMap();
+            emit wrapupChanged();
+        }
     } else if (type == "followups") {
         fetchFollowups();
     } else if (type == "echo_dropped") {
@@ -435,8 +440,9 @@ void Engine::fetchWrapup(const QString &id) {
         m_wrapupFetch->disconnect(this);
         m_wrapupFetch->abort();
     }
-    if (!m_wrapup.isEmpty()) {
+    if (!m_wrapup.isEmpty() || !m_takeaways.isEmpty()) {
         m_wrapup.clear();
+        m_takeaways.clear();
         emit wrapupChanged();
     }
     if (id.isEmpty())
@@ -449,7 +455,9 @@ void Engine::fetchWrapup(const QString &id) {
         m_wrapupFetch = nullptr;
         if (reply->error() != QNetworkReply::NoError || id != m_selected)
             return;
-        m_wrapup = QJsonDocument::fromJson(reply->readAll()).object().value("wrapup").toObject().toVariantMap();
+        const QJsonObject body = QJsonDocument::fromJson(reply->readAll()).object();
+        m_wrapup = body.value("wrapup").toObject().toVariantMap();
+        m_takeaways = body.value("takeaways").toObject().toVariantMap();
         emit wrapupChanged();
     });
 }

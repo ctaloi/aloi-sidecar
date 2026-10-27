@@ -173,9 +173,17 @@ async def ok(request):
     return web.json_response({})
 
 
+TAKEAWAYS = {"updated": NOW - 50, "lines": 9,
+             "asked": [{"text": "Does the auto attendant need holiday hours?", "at": 10}],
+             "mine": [{"text": "Send pricing for two conference phones today", "at": 9},
+                      {"text": "Check caller ID registration on outbound numbers", "at": 5}],
+             "decisions": [{"text": "Number change the night of the 13th", "at": 4}],
+             "questions": []}
+
+
 async def get_wrapup(request):
     mid = request.match_info["id"]
-    return web.json_response({"wrapup": wrapups.get(mid)})
+    return web.json_response({"wrapup": wrapups.get(mid), "takeaways": TAKEAWAYS if mid == current_id else None})
 
 
 async def put_wrapup(request):

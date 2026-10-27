@@ -44,6 +44,23 @@ Claude Code.
   listen; when the call lets go of it, another offers to end the meeting,
   which ends by itself after two quiet minutes. Dictation (Superwhisper)
   doesn't count. Turn it off in the settings menu (⋯ at the top).
+- **It knows your calendar.** Through the Aloi Meetings sign-in, a call is
+  named after the meeting it is, with who was invited. Two minutes before
+  a meeting a notification offers **Join and listen**; when the next
+  meeting begins while another is still being heard, it offers to switch
+  (and does, after a minute). The Aloi Meetings bar item turns red with the
+  elapsed time while Sidecar listens, and its panel has Join and listen,
+  Stop, and what's left to wrap up.
+- **Takeaways while you talk.** Every couple of minutes Haiku keeps four
+  short lists in the agent panel: asked and not answered, what you said
+  you'd do, decided, and open. `M` marks a moment, `N` types a note; both
+  go into the transcript and weigh on the wrap-up.
+- **Follow-ups (`F`)** gathers what you committed to in every meeting,
+  oldest first. Ticking one off ticks it on the meeting's Notion page too,
+  and ticks made in Notion come back.
+- **No listening to dead air.** After five minutes with nothing said, a
+  notification asks if the call's still on; unanswered and still quiet, the
+  meeting ends three minutes later.
 
 ## Nothing changes by itself
 

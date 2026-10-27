@@ -240,6 +240,13 @@ Rectangle {
             wrapMode: Text.Wrap
         }
 
+        TakeawaysCard {
+            Layout.fillWidth: true
+            Layout.leftMargin: 14
+            Layout.rightMargin: 14
+            Layout.topMargin: 6
+        }
+
         Flow {
             id: chipRow
             Layout.fillWidth: true

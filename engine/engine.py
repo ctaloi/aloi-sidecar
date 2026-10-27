@@ -25,6 +25,7 @@ from aiohttp import web
 
 import agenda
 import calls
+import takeaways
 import wrapup
 import notion
 from notion import Notion, NotionError
@@ -38,7 +39,9 @@ PARAKEET = MODELS / "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
 MEETINGS = Path(os.environ.get("SIDECAR_MEETINGS", Path.home() / ".local/share/aloi-sidecar/meetings"))
 TRASH = MEETINGS.parent / "trash"  # deleted meetings go here, never straight to nothing
 SETTINGS = Path(os.environ.get("SIDECAR_SETTINGS", Path.home() / ".config/aloi-sidecar/settings.json"))
-DEFAULTS = {"watch_calls": True, "calendar_offers": True}
+DEFAULTS = {"watch_calls": True, "calendar_offers": True, "live_takeaways": True, "stop_on_silence": True}
+QUIET_ASK = 5 * 60  # seconds of nothing said while listening before Sidecar asks if the call's still on
+QUIET_END = 3 * 60  # and then, unanswered and still quiet, before the meeting ends by itself
 SLACK_AFTER = 5 * 60  # a meeting's "about to start" offer stays up until five minutes in
 SWITCH_AFTER = 60  # seconds before a running meeting gives way to the next calendar meeting
 END_AFTER = 120  # seconds after a call lets go of the mic before its meeting ends by itself
@@ -179,6 +182,16 @@ class Meeting:
         tmp.write_text(json.dumps(w, indent=1))
         tmp.replace(self.folder / "wrapup.json")
 
+    def takeaways(self):
+        path = self.folder / "takeaways.json"
+        return json.loads(path.read_text()) if path.exists() else None
+
+    def save_takeaways(self, t):
+        self.folder.mkdir(parents=True, exist_ok=True)
+        tmp = self.folder / "takeaways.json.tmp"
+        tmp.write_text(json.dumps(t, indent=1))
+        tmp.replace(self.folder / "takeaways.json")
+
     def notes(self):
         """The wrap-up as it stands: Chris's edits if he made any, else the draft."""
         w = self.wrapup()
@@ -222,6 +235,8 @@ class Sidecar:
         self.channels = []
         self.tasks = []
         self.listening = False
+        self.listening_since = 0  # when listening last started, for dead air
+        self.asked_quiet = False
         self.current = None  # the meeting that's live or paused, if any
         MEETINGS.mkdir(parents=True, exist_ok=True)
         self.meetings = {}
@@ -565,6 +580,73 @@ class Sidecar:
         finally:
             self.sending.pop(m.id, None)
 
+    # ---- dead air ----
+
+    def quiet_for(self):
+        """Seconds since anything was said in the meeting that's listening:
+        its last line, or since listening started if it's said nothing yet."""
+        m = self.current
+        last = m.segments[-1]["end"] if m and m.segments else 0
+        return time.time() - max(last, self.listening_since)
+
+    async def watch_silence(self):
+        """Listening to a room where nothing's being said: ask whether the
+        call's still on, and if nobody answers and it stays quiet, end it,
+        rather than leave the mic open on dead air."""
+        while True:
+            await asyncio.sleep(15)
+            if not (self.listening and self.current and self.settings["stop_on_silence"]):
+                continue
+            if self.quiet_for() >= QUIET_ASK and not self.asked_quiet:
+                self.asked_quiet = True
+                self.notify(self.ask_if_quiet(self.current))
+
+    async def ask_if_quiet(self, m):
+        heard, asked = m.lines(), time.time()
+        minutes = int(self.quiet_for() // 60)
+        choice = await calls.notify(f"Nothing said for {minutes} minutes",
+                                    f"Still on a call? “{m.meta['title']}” ends by itself in three minutes if it stays quiet.",
+                                    [("default", "Keep listening"), ("end", "End meeting")], timeout=QUIET_END)
+        if choice == "default":
+            self.listening_since = time.time()  # another five minutes before asking again
+            self.asked_quiet = False
+            return
+        if choice is None:
+            await asyncio.sleep(max(0, QUIET_END - (time.time() - asked)))
+        if self.current is not m or not self.listening:
+            return
+        if choice == "end" or m.lines() == heard:
+            await self.end_meeting()
+        else:
+            self.asked_quiet = False  # people started talking again
+
+    # ---- takeaways while the call goes on ----
+
+    async def follow_takeaways(self):
+        """Keeps the live meeting's takeaways current: every couple of
+        minutes, and only when something new has been said."""
+        while True:
+            await asyncio.sleep(20)
+            m = self.current
+            if not (m and self.listening and self.settings["live_takeaways"]):
+                continue
+            t = m.takeaways() or {"lines": 0, "updated": 0}
+            if m.lines() - t["lines"] < takeaways.NEW_LINES or time.time() - t["updated"] < takeaways.EVERY:
+                continue
+            lines = m.lines()
+            try:
+                lists = await takeaways.update(ME, m.meta, list(m.segments))
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # a missed update is fine; the next one catches up
+                print(f"takeaways: {e}", file=sys.stderr, flush=True)
+                t["updated"] = time.time()
+                m.save_takeaways(t)
+                continue
+            t = {**lists, "lines": lines, "updated": time.time()}
+            m.save_takeaways(t)
+            self.broadcast({"type": "takeaways", "id": m.id, "takeaways": t})
+
     # ---- follow-ups: what Chris has to do, across every meeting ----
 
     def followups(self):
@@ -646,6 +728,8 @@ class Sidecar:
             for sink in sinks():
                 self.channels.append(Channel(self, "Them", sink + ".monitor", label_for(sink, displays)))
             self.tasks = [asyncio.create_task(c.run()) for c in self.channels]
+            self.listening_since = time.time()
+            self.asked_quiet = False
             self.current.meta["state"] = "live"
         else:
             for t in self.tasks:
@@ -965,7 +1049,7 @@ async def delete(request):
 
 async def get_wrapup(request):
     m = find(request)
-    return web.json_response({"meeting": m.summary(), "wrapup": m.wrapup()})
+    return web.json_response({"meeting": m.summary(), "wrapup": m.wrapup(), "takeaways": m.takeaways()})
 
 
 async def draft(request):
@@ -1106,7 +1190,8 @@ async def main():
     print(f"Aloi Sidecar engine on http://127.0.0.1:{PORT}", flush=True)
     if listen_now:
         await sidecar.set_listening(True)
-    jobs = [sidecar.flush_pending(), sidecar.levels(), sidecar.follow_calendar()]
+    jobs = [sidecar.flush_pending(), sidecar.levels(), sidecar.follow_calendar(), sidecar.follow_takeaways(),
+            sidecar.watch_silence()]
     if calls.enabled():
         jobs.append(sidecar.watch.watch())
     await asyncio.gather(*jobs)

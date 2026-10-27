@@ -189,6 +189,18 @@ Rectangle {
                     on: engine.settings.calendar_offers !== false
                     onTriggered: engine.setSetting("calendar_offers", !(engine.settings.calendar_offers !== false))
                 }
+                MenuRow {
+                    text: qsTr("Live takeaways during calls (Haiku)")
+                    setting: true
+                    on: engine.settings.live_takeaways !== false
+                    onTriggered: engine.setSetting("live_takeaways", !(engine.settings.live_takeaways !== false))
+                }
+                MenuRow {
+                    text: qsTr("End after a long silence")
+                    setting: true
+                    on: engine.settings.stop_on_silence !== false
+                    onTriggered: engine.setSetting("stop_on_silence", !(engine.settings.stop_on_silence !== false))
+                }
                 MenuLine {}
                 MenuRow { text: qsTr("Show the meetings folder"); onTriggered: Qt.openUrlExternally("file://" + engine.meetingFolder("")) }
                 MenuRow { text: qsTr("Show the trash folder"); onTriggered: Qt.openUrlExternally("file://" + engine.meetingFolder("").replace(/meetings\/$/, "trash")) }

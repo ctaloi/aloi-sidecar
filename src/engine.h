@@ -80,6 +80,8 @@ class Engine : public QObject {
     // The selected meeting's wrap-up: {state: drafting|ready|failed, error,
     // draft, edited, drafted}, or empty if it has none yet.
     Q_PROPERTY(QVariantMap wrapup READ wrapup NOTIFY wrapupChanged)
+    // The selected meeting's live takeaways: {mine, asked, decisions, questions, updated}.
+    Q_PROPERTY(QVariantMap takeaways READ takeaways NOTIFY wrapupChanged)
     // Another app holding the mic, as the engine sees it: {app, since}, or empty.
     Q_PROPERTY(QVariantMap call READ call NOTIFY stateChanged)
     // The engine's settings: {watch_calls}.
@@ -112,6 +114,7 @@ public:
     int echoes() const { return m_echoes; }
     QString error() const { return m_error; }
     QVariantMap wrapup() const { return m_wrapup; }
+    QVariantMap takeaways() const { return m_takeaways; }
     QVariantMap call() const { return m_call; }
     QVariantMap settings() const { return m_settings; }
     QVariantList candidates() const { return m_candidates; }
@@ -226,7 +229,7 @@ private:
     QVariantList m_channels;
     QList<QVariantMap> m_interims;
     int m_echoes = 0;
-    QVariantMap m_wrapup, m_call, m_settings;
+    QVariantMap m_wrapup, m_takeaways, m_call, m_settings;
     QVariantList m_candidates;
     bool m_candidatesLoading = false;
     QString m_candidatesError;
