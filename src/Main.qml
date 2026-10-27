@@ -224,6 +224,7 @@ ApplicationWindow {
     Connections {
         target: engine
         function onCopied(what) { toast.show(what) }
+        function onChoosePage(id) { win.act("send", engine.meetingById(id)) }
     }
     // Enter in the search box opens the first meeting found, at the line.
     Connections {

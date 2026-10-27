@@ -215,6 +215,8 @@ signals:
     void candidatesChanged();
     void followupsChanged();
     void searchChanged();
+    // Do it all found a page from that day to fill in: the Send sheet asks which.
+    void choosePage(const QString &id);
     // Something landed on the clipboard (what, for the toast).
     void copied(const QString &what);
 

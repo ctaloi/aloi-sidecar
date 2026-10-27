@@ -76,6 +76,7 @@ def main():
     make_meeting(meetings, "2026-10-26_100000", "Call at 10:00", 1500, started)
     make_meeting(meetings, "2026-10-26_120000", "Northwind", 12, started + 7200)
     make_meeting(meetings, "2026-10-26_140000", "Harbor", 12, started + 14400)
+    make_meeting(meetings, "2026-10-26_160000", "Belmont", 12, started + 21600)
 
     engine_port, notion_port = free_port(), free_port()
     procs = [subprocess.Popen([PY, str(ROOT / "tests/fake/notion.py"), str(notion_port)])]
@@ -257,6 +258,15 @@ def main():
         check("do it all files it and drafts the email", made != before and "draft new" in made and "--send" not in made, made)
         status, again = call(base, "POST", f"/meeting/{third}/finish")
         check("doing it again does nothing twice", again["started"] == {"notion": False, "email": False}, again)
+
+        # With a page from that day already there to fill in, Do it all leaves
+        # the page to Chris and still drafts the email.
+        fourth = "2026-10-26_160000"
+        call(base, "POST", f"/meeting/{fourth}/wrapup")
+        wait("draft 4", lambda: _ready(base, fourth))
+        call(fake, "POST", "/_page", {"title": "Belmont (from elsewhere)"})
+        status, done = call(base, "POST", f"/meeting/{fourth}/finish")
+        check("with a page to fill in, Do it all asks which", done["started"] == {"notion": "choose", "email": True}, done)
 
         # A failed draft says why; delete moves the folder to the trash.
         check("skipping is saved", call(base, "PATCH", f"/meeting/{other}", {"skipped": True})[1]["skipped"] is True)

@@ -490,7 +490,20 @@ void Engine::merge(const QString &id, const QString &other) {
 }
 
 void Engine::finish(const QString &id) {
-    post(path(id, "/finish"), {});
+    QNetworkRequest request(m_url.resolved(QUrl(path(id, "/finish"))));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    QNetworkReply *reply = m_network.post(request, QByteArray("{}"));
+    connect(reply, &QNetworkReply::finished, this, [this, reply, id] {
+        reply->deleteLater();
+        const QByteArray data = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError) {
+            setError(data.isEmpty() ? reply->errorString() : QString::fromUtf8(data));
+            return;
+        }
+        // A page from that day is already there to fill in: Chris picks.
+        if (QJsonDocument::fromJson(data).object().value("started").toObject().value("notion").toString() == "choose")
+            emit choosePage(id);
+    });
 }
 
 void Engine::remove(const QString &id) {

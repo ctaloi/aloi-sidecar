@@ -734,15 +734,28 @@ class Sidecar:
         except Exception as err:
             self.set_email(m, state="ready", error=str(err) or type(err).__name__)
 
-    def finish(self, m):
+    async def fill_ins(self, m):
+        """Pages already in My Meetings from that day that this meeting could
+        fill in (something else files meetings there too), less Sidecar's own."""
+        pages = await self.notion.candidates(m.meta)
+        ours = {(o.meta.get("notion") or {}).get("id", "").replace("-", "") for o in self.meetings.values()}
+        return [p for p in pages if p["id"].replace("-", "") not in ours]
+
+    async def finish(self, m):
         """Everything after a call in one go: filed in Notion as a new page,
         and the follow-up email written (unless it already is) and saved to
-        Outlook Drafts. Never sent. Each part reports as it does on its own."""
+        Outlook Drafts. Never sent. Each part reports as it does on its own.
+        When there's already a page from that day it could fill in, the page
+        is left to Chris to choose ("choose"); the email still goes ahead."""
         if not m.notes():
             return None
         started = {"notion": False, "email": False}
-        if (m.meta.get("notion") or {}).get("state") != "sent":
-            started["notion"] = self.send(m) or m.id in self.sending
+        if (m.meta.get("notion") or {}).get("state") != "sent" and m.id not in self.sending:
+            try:
+                pages = await self.fill_ins(m)
+            except Exception:
+                pages = []  # Notion unreachable: the send reports that itself
+            started["notion"] = "choose" if pages else self.send(m)
         e = (m.wrapup() or {}).get("email") or {}
         if e.get("state") not in ("saved", "saving", "writing"):
             asyncio.create_task(self._finish_email(m))
@@ -1356,7 +1369,7 @@ async def resume(request):
 
 async def finish(request):
     m = find(request)
-    started = request.app["sidecar"].finish(m)
+    started = await request.app["sidecar"].finish(m)
     if started is None:
         raise web.HTTPConflict(text="There's no wrap-up yet.")
     return web.json_response({"started": started, "meeting": m.summary()})
@@ -1408,11 +1421,7 @@ async def markdown(request):
 async def candidates(request):
     app = request.app["sidecar"]
     try:
-        pages = await app.notion.candidates(find(request).meta)
-        # Pages Sidecar made for its other meetings aren't this one's.
-        ours = {(m.meta.get("notion") or {}).get("id", "").replace("-", "") for m in app.meetings.values()}
-        pages = [p for p in pages if p["id"].replace("-", "") not in ours]
-        return web.json_response({"pages": pages})
+        return web.json_response({"pages": await app.fill_ins(find(request))})
     except NotionError as e:
         return web.json_response({"error": str(e)}, status=502)
 
