@@ -165,7 +165,9 @@ Panel {
     function signIn(): void { if (root.service) root.service.signIn() }
     function status(): string {
       if (!root.service) return "starting"
+      var sc = root.service.sidecar || {}
       return root.phase + (root.label !== "" ? " " + root.label : "")
+             + (sc.connected ? " · sidecar " + (sc.listening ? "listening" : "idle") + ", " + sc.toWrapUp + " to wrap up" : " · sidecar offline")
     }
   }
 }
