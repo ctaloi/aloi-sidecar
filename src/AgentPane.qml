@@ -105,6 +105,7 @@ Rectangle {
                 required property int index
                 width: list.width
                 height: message.implicitHeight
+                HoverHandler { id: answerHover }
 
             Column {
                 id: message
@@ -146,6 +147,17 @@ Rectangle {
                     selectionColor: ui.alpha(theme.accent, 0.35)
                     selectedTextColor: ui.text
                     onLinkActivated: link => Qt.openUrlExternally(link)
+                }
+                // Hovering a finished answer offers to copy it.
+                Text {
+                    visible: !message.mine && modelData.streaming !== true && modelData.text !== ""
+                    opacity: answerHover.hovered ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                    text: qsTr("Copy")
+                    color: copyHover.hovered ? theme.accent : ui.faint
+                    font.pixelSize: 11
+                    HoverHandler { id: copyHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { engine.copyToClipboard(modelData.text); toast.show(qsTr("Copied the answer.")) } }
                 }
                 Text {
                     visible: !message.mine && modelData.streaming === true && modelData.text === ""
