@@ -8,6 +8,9 @@ if [ -n "${FAKE_WRAPUP_FAIL:-}" ]; then
   exit 0
 fi
 case "$*" in
+  *"glance at mid-call"*)
+    printf '%s\n' '{"type":"result","is_error":false,"result":"","structured_output":{"mine":[{"text":"Send pricing","at":1}],"asked":[],"decisions":[],"questions":[],"lookups":[{"kind":"customer","query":"Northwind Dental","why":"which carrier has the main number","at":0},{"kind":"number","query":"716 555 0100","why":"is it ported yet","at":1},{"kind":"other","query":"  ","why":"","at":1}]}}'
+    exit 0 ;;
   *"follow-up email"*)
     printf '%s\n' '{"type":"result","is_error":false,"result":"","structured_output":{"subject":"Cutover next steps","body":"Hey all -\n\nThanks for the time today!\n\nChris"}}'
     exit 0 ;;

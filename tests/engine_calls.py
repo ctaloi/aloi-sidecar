@@ -172,6 +172,17 @@ async def main():
     sound.clear(); await w.check(); await asyncio.sleep(0.15); await w.check()
     check("and it ends when the sound does", events[-1] == ("end", "Chromium"))
 
+    # Takeaways bring lookups: concrete things to check, gathered over the call.
+    import takeaways
+    import wrapup as W
+    W.WORKSPACE.mkdir(parents=True, exist_ok=True)
+    t = await takeaways.update("Chris", {"title": "Cutover"}, [{"id": 0, "speaker": "Them", "start": 1, "end": 2, "text": "Northwind's main number"}],
+                               program=str(ROOT / "tests/fake/claude-wrapup"))
+    check("takeaways bring lookups, blank ones dropped", [x["query"] for x in t["lookups"]] == ["Northwind Dental", "716 555 0100"])
+    merged = takeaways.merge_lookups(t["lookups"], [{"kind": "customer", "query": "northwind  dental", "why": "again", "at": 5},
+                                                    {"kind": "ticket", "query": "INC-42", "why": "open?", "at": 6}])
+    check("lookups gather without repeats", [x["query"] for x in merged] == ["Northwind Dental", "716 555 0100", "INC-42"])
+
     # Search finds what was said, in any meeting.
     found = app.search("thanks BYE")
     check("search finds a line by its words, any case", len(found) == 1 and found[0]["hits"][0]["text"] == "Thanks, bye.")

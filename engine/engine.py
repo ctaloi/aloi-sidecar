@@ -827,6 +827,7 @@ class Sidecar:
                 t["updated"] = time.time()
                 m.save_takeaways(t)
                 continue
+            lists["lookups"] = takeaways.merge_lookups(t.get("lookups"), lists.get("lookups"))
             t = {**lists, "lines": lines, "updated": time.time()}
             m.save_takeaways(t)
             self.broadcast({"type": "takeaways", "id": m.id, "takeaways": t})

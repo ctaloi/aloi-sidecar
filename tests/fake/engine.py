@@ -203,7 +203,10 @@ TAKEAWAYS = {"updated": NOW - 50, "lines": 9,
              "mine": [{"text": "Send pricing for two conference phones today", "at": 9},
                       {"text": "Check caller ID registration on outbound numbers", "at": 5}],
              "decisions": [{"text": "Number change the night of the 13th", "at": 4}],
-             "questions": []}
+             "questions": [],
+             "lookups": [{"kind": "customer", "query": "Northwind Dental", "why": "which carrier has the main number", "at": 2},
+                         {"kind": "number", "query": "716 555 0142", "why": "is the port scheduled", "at": 3},
+                         {"kind": "ticket", "query": "INC-20417", "why": "spam likely complaint, still open?", "at": 5}]}
 
 
 async def get_wrapup(request):

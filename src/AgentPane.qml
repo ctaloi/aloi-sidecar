@@ -242,6 +242,13 @@ Rectangle {
             Layout.rightMargin: 14
             Layout.topMargin: 6
         }
+        LookupCards {
+            Layout.fillWidth: true
+            Layout.leftMargin: 14
+            Layout.rightMargin: 14
+            Layout.topMargin: 8
+            onLook: prompt => pane.ask(prompt)
+        }
         // Before the first question the takeaways sit under the intro; after
         // it, the answers take the room above them.
         Item { Layout.fillHeight: true; visible: agent.messages.length === 0 }

@@ -6,6 +6,7 @@
         <file>AgentPane.qml</file>
         <file>MeetingHeader.qml</file>
         <file>SmoothScroll.qml</file>
+        <file>LookupCards.qml</file>
         <file>CommandPalette.qml</file>
         <file>KeysOverlay.qml</file>
         <file>ActionButton.qml</file>
