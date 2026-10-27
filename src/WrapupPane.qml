@@ -282,6 +282,7 @@ Rectangle {
                                 }
                                 if (root.stage === "sent") return (root.notion.filled ? qsTr("Filled in an existing page") : qsTr("New page in My Meetings"))
                                                                  + (root.notion.sent ? "  ·  " + Sidecar.when(root.notion.sent, root.now) : "")
+                                                                 + "  ·  " + qsTr("edits here stay in Sidecar; ticks sync")
                                 let s = root.w.drafted ? qsTr("Drafted by Opus %1").arg(Sidecar.when(root.w.drafted, root.now)) : ""
                                 if (root.w.edited) s += "  ·  " + (save.running ? qsTr("editing") : saved.running ? qsTr("saved") : qsTr("edited"))
                                 if (root.w.error) s += "  ·  " + qsTr("the last redraft failed")

@@ -25,6 +25,7 @@ Popup {
         ["R", qsTr("Rename the meeting on screen")],
         ["T", qsTr("Notes / transcript")],
         ["Menu", qsTr("Everything for the meeting (or right-click it)")],
+        [qsTr("Right-click"), qsTr("A transcript line: ask the agent about it, copy it")],
         ["Del", qsTr("Delete the meeting (to the trash folder)")],
         ["\\", qsTr("Show / hide the meetings list")],
         ["Ctrl+F", qsTr("Search what was said, in every meeting")],
