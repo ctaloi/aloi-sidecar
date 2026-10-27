@@ -21,7 +21,9 @@ HEADING = "Sidecar notes"  # what Sidecar's part of a page it fills in sits unde
 
 
 class NotionError(Exception):
-    pass
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
 
 
 async def token():
@@ -149,7 +151,7 @@ class Notion:
                         elif r.status == 404:
                             message = ("Notion can't see that. Share the My Meetings database with the "
                                        "Aloi Sidecar integration (⋯ → Connections).")
-                        raise NotionError(message)
+                        raise NotionError(message, r.status)
                     return data
             except aiohttp.ClientError:
                 if attempt == 3:
@@ -295,13 +297,26 @@ async def tick(notion, block_id, done):
     await notion.call("PATCH", f"/blocks/{block_id}", {"to_do": {"checked": bool(done)}})
 
 
+GONE = "gone"
+
+
 async def ticked(notion, block_id):
-    """Whether a follow-up's to-do is ticked in Notion, or None if it's gone."""
+    """Whether a follow-up's to-do is ticked in Notion; GONE if it was
+    deleted there, None if Notion couldn't be asked."""
     try:
         b = await notion.call("GET", f"/blocks/{block_id}")
-    except NotionError:
-        return None
-    return None if b.get("archived") or b.get("in_trash") else bool(b.get("to_do", {}).get("checked"))
+    except NotionError as e:
+        return GONE if e.status == 404 else None
+    return GONE if b.get("archived") or b.get("in_trash") else bool(b.get("to_do", {}).get("checked"))
+
+
+async def remove(notion, block_id):
+    """Deletes one follow-up's to-do from its Notion page (to Notion's trash)."""
+    try:
+        await notion.call("DELETE", f"/blocks/{block_id}")
+    except NotionError as e:
+        if e.status != 404:  # already gone is as good as removed
+            raise
 
 
 def is_empty(prop):

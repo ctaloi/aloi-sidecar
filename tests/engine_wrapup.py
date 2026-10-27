@@ -102,7 +102,7 @@ def main():
         check("listing says a wrap-up is ready", w["meeting"]["wrapup"] == "ready")
 
         # Edits are kept apart and survive a redraft that doesn't replace them.
-        edited = {**draft, "title": "Northwind Dental Cutover", "mine": draft["mine"][:1]}
+        edited = {**draft, "title": "Northwind Dental Cutover", "mine": draft["mine"]}
         call(base, "PUT", f"/meeting/{mid}/wrapup", {"edited": edited})
         call(base, "POST", f"/meeting/{mid}/wrapup")
         w = wait("redraft", lambda: _ready(base, mid))
@@ -110,7 +110,7 @@ def main():
         check("listing says it was edited", w["meeting"]["edited"] is True)
 
         status, md = call(base, "GET", f"/meeting/{mid}/markdown")
-        check("markdown uses the edits", "# Northwind Dental Cutover" in md and md.count("- [ ]") == 1, md[:300])
+        check("markdown uses the edits", "# Northwind Dental Cutover" in md and md.count("- [ ]") == 2, md[:300])
 
         # A send that fails part way resumes on the same page.
         call(fake, "POST", "/_fail", {"after": 1})
@@ -168,6 +168,35 @@ def main():
         check("block ids survive a stale save", w2["wrapup"]["edited"]["mine"][0].get("notion") == block, w2["wrapup"]["edited"]["mine"])
         wait("tick from the wrap-up", ticked, 10)
         check("a tick in the wrap-up reaches Notion", ticked())
+
+        # Editing a follow-up's words keeps it tied to its to-do.
+        reworded = json.loads(json.dumps(w2["wrapup"]["edited"]))
+        reworded["mine"][0]["text"] = "Chase the Lumen port (reworded)"
+        call(base, "PUT", f"/meeting/{mid}/wrapup", {"edited": reworded})
+        _, w3 = call(base, "GET", f"/meeting/{mid}/wrapup")
+        check("rewording keeps the Notion to-do", w3["wrapup"]["edited"]["mine"][0].get("notion") == block)
+
+        # One deleted in Notion goes from Sidecar; removing one here takes it
+        # off the Notion page.
+        mine3 = w3["wrapup"]["edited"]["mine"]
+        n = len(mine3)
+        call(fake, "DELETE", f"/blocks/{block}")
+        _, synced = call(base, "POST", "/followups/sync", {})
+        left = [f for f in synced["followups"] if f["meeting"] == mid]
+        check("a to-do deleted in Notion goes from Sidecar", len(left) == n - 1 and synced["changed"] >= 1, (n, synced))
+        if left:
+            _, w4 = call(base, "GET", f"/meeting/{mid}/wrapup")
+            last = w4["wrapup"]["edited"]["mine"][-1]["notion"]
+            _, after = call(base, "POST", "/followups/remove", {"meeting": mid, "index": len(left) - 1})
+            check("a removed follow-up is gone from the list", len([f for f in after["followups"] if f["meeting"] == mid]) == n - 2)
+            def trashed():
+                _, b = call(fake, "GET", f"/blocks/{last}")
+                return b.get("in_trash") is True
+            wait("removed in Notion", trashed, 10)
+            check("removing it removes the Notion to-do", trashed())
+        _, fl2 = call(base, "GET", "/followups")
+        starts = [f["started"] for f in fl2["followups"]]
+        check("follow-ups come newest meeting first", starts == sorted(starts, reverse=True))
 
         # A note and a mark land in the transcript, at its end for a meeting that's over.
         status, seg = call(base, "POST", f"/meeting/{mid}/note", {"kind": "note", "text": "check the contract end date"})

@@ -118,6 +118,18 @@ async def update_block(request):
     return web.json_response({"message": "Could not find block"}, status=404)
 
 
+async def delete_block(request):
+    await record(request)
+    bid = request.match_info["id"]
+    for children in blocks.values():
+        for b in children:
+            if b.get("id") == bid:
+                b["archived"] = True
+                b["in_trash"] = True
+                return web.json_response(b)
+    return web.json_response({"message": "Could not find block"}, status=404)
+
+
 async def get_log(request):
     return web.json_response({"log": log, "pages": pages, "blocks": {k: len(v) for k, v in blocks.items()}})
 
@@ -150,6 +162,7 @@ app.router.add_patch("/blocks/{id}/children", append)
 app.router.add_get("/blocks/{id}/children", children)
 app.router.add_get("/blocks/{id}", get_block)
 app.router.add_patch("/blocks/{id}", update_block)
+app.router.add_delete("/blocks/{id}", delete_block)
 app.router.add_get("/_log", get_log)
 app.router.add_post("/_fail", set_fail)
 app.router.add_post("/_page", add_page)

@@ -177,6 +177,8 @@ public:
     Q_INVOKABLE void saveEmail(const QString &id);
     Q_INVOKABLE void fetchFollowups();
     Q_INVOKABLE void search(const QString &q);
+    // Gone, not done: out of the wrap-up and off the Notion page.
+    Q_INVOKABLE void removeFollowup(const QString &meeting, int index);
     Q_INVOKABLE void setFollowupDone(const QString &meeting, int index, bool done);
     // Ticks made in Notion, brought back.
     Q_INVOKABLE void syncFollowups();

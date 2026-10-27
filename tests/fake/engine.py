@@ -113,7 +113,7 @@ def followups():
             out.append({"meeting": mid, "title": titles[mid]["title"], "started": titles[mid]["started"], "index": i,
                         "text": item["text"], "due": item.get("due", ""), "at": item.get("at", -1),
                         "done": bool(item.get("done")), "inNotion": mid in notion, "syncError": None})
-    return sorted(out, key=lambda f: (f["started"], f["index"]))
+    return sorted(out, key=lambda f: (-f["started"], f["index"]))
 
 
 def state_event():
@@ -266,6 +266,7 @@ app.router.add_get("/followups", get_followups)
 app.router.add_get("/search", search)
 app.router.add_post("/followups/sync", sync_followups)
 app.router.add_post("/followups/done", ok)
+app.router.add_post("/followups/remove", get_followups)
 app.router.add_post("/meeting/{id}/email", ok)
 app.router.add_put("/meeting/{id}/email", ok)
 app.router.add_post("/meeting/{id}/email/save", ok)

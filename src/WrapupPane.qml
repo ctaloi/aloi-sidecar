@@ -725,7 +725,20 @@ Rectangle {
                 Layout.alignment: Qt.AlignTop
                 Layout.topMargin: 3
                 Layout.rightMargin: 4
-                onClicked: root.removeItem(item.list, item.index)
+                onClicked: {
+                    // A follow-up that's a to-do on the Notion page comes off it too, so ask.
+                    const it = root.doc[item.list][item.index]
+                    if (item.list === "mine" && it && it.notion && root.stage === "sent")
+                        confirm.ask({
+                            title: qsTr("Remove “%1”?").arg(it.text),
+                            detail: qsTr("Its to-do comes off the Notion page too (Notion keeps it in its trash)."),
+                            confirm: qsTr("Remove"),
+                            danger: true,
+                            run: () => root.removeItem(item.list, item.index)
+                        })
+                    else
+                        root.removeItem(item.list, item.index)
+                }
             }
         }
     }

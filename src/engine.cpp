@@ -648,6 +648,22 @@ void Engine::setFollowupDone(const QString &meeting, int index, bool done) {
     post("/followups/done", QJsonObject{{"meeting", meeting}, {"index", index}, {"done", done}});
 }
 
+void Engine::removeFollowup(const QString &meeting, int index) {
+    QNetworkRequest request(m_url.resolved(QUrl("/followups/remove")));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    QNetworkReply *reply = m_network.post(request, QJsonDocument(QJsonObject{{"meeting", meeting}, {"index", index}}).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        const QByteArray data = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError) {
+            setError(data.isEmpty() ? reply->errorString() : QString::fromUtf8(data));
+            return;
+        }
+        m_followups = QJsonDocument::fromJson(data).object().value("followups").toArray().toVariantList();
+        emit followupsChanged();
+    });
+}
+
 void Engine::syncFollowups() {
     if (m_syncing)
         return;

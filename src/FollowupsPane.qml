@@ -3,10 +3,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "sidecar.js" as Sidecar
 
-// Everything Chris said he'd do, from every meeting's wrap-up, oldest
-// meeting first, so nothing promised last week sinks out of sight. Ticking
-// one off ticks it off in the wrap-up and, for meetings in Notion, on the
-// page too; ticks made in Notion come back when this opens.
+// Everything Chris said he'd do, from every meeting's wrap-up, the newest
+// meeting first. Ticking one off ticks it off in the wrap-up and, for
+// meetings in Notion, on the page too; × removes it altogether, there too.
+// Ticks and deletions made in Notion come back when this opens.
 Rectangle {
     id: root
     color: ui.window
@@ -16,7 +16,7 @@ Rectangle {
     readonly property var all: engine.followups
     readonly property var shown: all.filter(f => showDone ? f.done : !f.done)
     readonly property int doneCount: all.filter(f => f.done).length
-    // Grouped by meeting, keeping the oldest-first order.
+    // Grouped by meeting, newest first.
     readonly property var groups: {
         const out = []
         for (const f of shown) {
@@ -24,9 +24,20 @@ Rectangle {
                 out.push({ meeting: f.meeting, title: f.title, started: f.started, items: [] })
             out[out.length - 1].items.push(f)
         }
-        return showDone ? out.reverse() : out
+        return out
     }
     signal openMeeting(string id, int at)
+
+    function remove(f) {
+        if (!f.inNotion) { engine.removeFollowup(f.meeting, f.index); return }
+        confirm.ask({
+            title: qsTr("Remove “%1”?").arg(f.text),
+            detail: qsTr("It comes out of the wrap-up and its to-do comes off the Notion page (Notion keeps it in its trash)."),
+            confirm: qsTr("Remove"),
+            danger: true,
+            run: () => engine.removeFollowup(f.meeting, f.index)
+        })
+    }
 
     onVisibleChanged: if (visible) { engine.fetchFollowups(); engine.syncFollowups() }
 
@@ -206,6 +217,19 @@ Rectangle {
                                     ToolTip.delay: 400
                                     ToolTip.text: qsTr("A to-do on the meeting's Notion page; ticks sync")
                                 }
+                            }
+                            // Gone, not done.
+                            Label {
+                                Layout.alignment: Qt.AlignTop
+                                text: "×"
+                                opacity: rowHover.hovered ? 1 : 0
+                                color: removeHover.hovered ? ui.danger : ui.faint
+                                font.pixelSize: 14
+                                HoverHandler { id: removeHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: root.remove(row.modelData) }
+                                ToolTip.visible: removeHover.hovered
+                                ToolTip.delay: 400
+                                ToolTip.text: row.modelData.inNotion ? qsTr("Remove it, here and on the Notion page") : qsTr("Remove it")
                             }
                             Label {
                                 Layout.alignment: Qt.AlignTop

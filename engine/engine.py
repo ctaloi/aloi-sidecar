@@ -658,9 +658,12 @@ class Sidecar:
         old = (m.notes() or {}).get("mine", [])
         if edited:
             edited = {**wrapup.EMPTY, **json.loads(json.dumps(edited))}
+            same_count = len(edited["mine"]) == len(old)
             for i, item in enumerate(edited["mine"]):
                 before = old[i] if i < len(old) and old[i].get("text") == item.get("text") else \
                     next((o for o in old if o.get("text") == item.get("text")), None)
+                if not before and same_count and i < len(old):
+                    before = old[i]  # its text was edited; it's still the same to-do
                 if not before:
                     continue
                 for key in ("notion", "done_at"):
@@ -670,6 +673,13 @@ class Sidecar:
                     item["done_at"] = time.time() if item.get("done") else None
                     if tick and item.get("notion"):
                         asyncio.create_task(self._tick(m, i, item["notion"], bool(item.get("done"))))
+            # Taken out (fewer than before, and its to-do isn't kept by any
+            # that remain): it comes off the Notion page too.
+            if tick and len(edited["mine"]) < len(old):
+                kept = {i.get("notion") for i in edited["mine"]}
+                for o in old:
+                    if o.get("notion") and o["notion"] not in kept:
+                        asyncio.create_task(self._remove_todo(o["notion"]))
         w["edited"] = edited or None
         if w["state"] == "failed" and edited:
             w["state"] = "ready"
@@ -841,7 +851,7 @@ class Sidecar:
                             "text": item["text"], "due": item.get("due", ""), "at": item.get("at", -1),
                             "done": bool(item.get("done")), "doneAt": item.get("done_at"),
                             "inNotion": sent and bool(item.get("notion")), "syncError": item.get("sync_error")})
-        return sorted(out, key=lambda f: (f["started"], f["index"]))
+        return sorted(out, key=lambda f: (-f["started"], f["index"]))  # newest meeting first
 
     def open_followups(self):
         return sum(1 for f in self.followups() if not f["done"])
@@ -865,6 +875,20 @@ class Sidecar:
                 doc["mine"][index]["sync_error"] = str(e) or "Couldn't reach Notion"
                 self.edit_wrapup(m, doc, tick=False)
                 self.broadcast({"type": "followups"})
+
+    def remove_followup(self, m, index):
+        """Takes a follow-up out of the meeting's wrap-up altogether (not done:
+        gone), and off its Notion page."""
+        doc = json.loads(json.dumps(m.notes()))
+        del doc["mine"][index]
+        self.edit_wrapup(m, doc)
+        self.broadcast(self.state())
+
+    async def _remove_todo(self, block_id):
+        try:
+            await notion.remove(self.notion, block_id)
+        except Exception as e:
+            print(f"notion: couldn't remove to-do {block_id}: {e}", file=sys.stderr, flush=True)
 
     async def link_todos(self):
         """Meetings sent before follow-ups knew their to-dos: find each one's
@@ -890,16 +914,26 @@ class Sidecar:
     async def pull_ticks(self):
         """Ticks made in Notion come back to Sidecar."""
         await self.link_todos()
-        changed = 0
+        changed, gone = 0, []
         for f in self.followups():
             if not f["inNotion"]:
                 continue
             m = self.meetings[f["meeting"]]
             block_id = m.notes()["mine"][f["index"]].get("notion")
             state = await notion.ticked(self.notion, block_id)
-            if state is not None and state != f["done"]:
+            if state == notion.GONE:
+                gone.append((m, f["index"]))
+            elif state is not None and state != f["done"]:
                 self.set_done(m, f["index"], state, from_notion=True)
                 changed += 1
+        # Deleted in Notion: gone here too, last first so the indexes hold.
+        for m, index in sorted(gone, key=lambda g: (g[0].id, -g[1])):
+            doc = json.loads(json.dumps(m.notes()))
+            del doc["mine"][index]
+            self.edit_wrapup(m, doc, tick=False)
+            changed += 1
+        if gone:
+            self.broadcast(self.state())
         return changed
 
     def update_meeting(self, m, changes):
@@ -1328,6 +1362,18 @@ async def search(request):
     return web.json_response({"q": q, "results": request.app["sidecar"].search(q)})
 
 
+async def remove_followup(request):
+    app = request.app["sidecar"]
+    b = await body(request)
+    m = app.meetings.get(b.get("meeting", ""))
+    notes = m.notes() if m else None
+    index = b.get("index", -1)
+    if not notes or not 0 <= index < len(notes.get("mine", [])):
+        raise web.HTTPNotFound(text="No such follow-up.")
+    app.remove_followup(m, index)
+    return web.json_response({"followups": app.followups()})
+
+
 async def followups(request):
     return web.json_response({"followups": request.app["sidecar"].followups()})
 
@@ -1433,6 +1479,7 @@ async def main():
     app.router.add_put("/meeting/{id}/email", edit_email)
     app.router.add_post("/meeting/{id}/email/save", save_email)
     app.router.add_get("/followups", followups)
+    app.router.add_post("/followups/remove", remove_followup)
     app.router.add_get("/search", search)
     app.router.add_post("/followups/done", set_followup)
     app.router.add_post("/followups/sync", sync_followups)
