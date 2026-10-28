@@ -2,6 +2,8 @@
 
 Chris's decisions (2026-10-26), marked **Decided**: ask with a toast; follow-ups on the Notion page plus a Sidecar tab; the bar item folded into Aloi Meetings; Notion through an integration token. Every meeting can be opened later to review it and ask about it.
 
+2026-10-28: Aloi Meetings itself moved into this repo as `plugin/` (plugin id `aloi.sidecar`); it's Sidecar's bar item and calendar now, and the separate plugin is gone.
+
 ## What went wrong on day one
 
 The prototype listened all day. A restart within 15 minutes of the last line

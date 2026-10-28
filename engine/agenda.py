@@ -1,8 +1,8 @@
-"""Chris's calendar, from the Aloi Meetings helper. (Named agenda.py so it
+"""Chris's calendar, from the bar plugin's helper. (Named agenda.py so it
 doesn't shadow the standard library's calendar module.)
 
-The helper (bin/aloi-meetings in the Aloi Meetings bar plugin) already
-signs in to Microsoft 365 and shapes today's meetings; Sidecar asks it, so
+The helper (plugin/bin/aloi-meetings, Sidecar's own bar plugin) already
+signs in to Microsoft 365 and shapes today's meetings; the engine asks it, so
 there's one sign-in and one idea of what "today" holds. From that Sidecar
 knows what a call is called and who's in it, offers to listen a couple of
 minutes before a meeting, and notices when the next one begins.
@@ -20,8 +20,8 @@ LEAD = 2 * 60  # how long before a meeting the "about to start" offer comes
 SLACK = 5 * 60  # a call this close to a meeting's start counts as that meeting
 JOIN = 10 * 60  # a call starting later than this into a slot is something else (the window's name still matches)
 CANDIDATES = [
-    Path.home() / ".config/omarchy/plugins/aloi.meetings/bin/aloi-meetings",
-    Path.home() / "Work/meetings/bin/aloi-meetings",
+    Path(__file__).resolve().parent.parent / "plugin/bin/aloi-meetings",
+    Path.home() / ".config/omarchy/plugins/aloi.sidecar/bin/aloi-meetings",
 ]
 
 
@@ -141,7 +141,7 @@ def people(event, me):
 
 
 async def join(url):
-    """Opens the meeting the way the Aloi Meetings bar does: Teams and Meet as
+    """Opens the meeting the way the bar plugin does: Teams and Meet as
     Omarchy web apps, anything else in the default handler."""
     if not url.startswith("https://"):
         return

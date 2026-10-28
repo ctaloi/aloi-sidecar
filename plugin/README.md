@@ -1,4 +1,7 @@
-# Aloi Meetings
+# Aloi Sidecar in the bar
+
+This was Aloi Meetings, a plugin of its own, until 2026-10-28. It now ships
+with Sidecar: the engine gets the calendar from `bin/aloi-meetings` here.
 
 Your next Microsoft 365 meeting, right in the Omarchy bar. A small calendar
 icon sits in the middle of the bar, just left of the clock. Half an hour before a meeting it
@@ -41,12 +44,7 @@ countdown ticks on the minute without asking Microsoft anything.
 ## Install (development)
 
 ```bash
-d=~/.config/omarchy/plugins/aloi.meetings; mkdir -p $d
-for f in manifest.json BarWidget.qml MeetingsContent.qml Service.qml Model.js Registry.js bin i18n; do
-  ln -sfn ~/Work/meetings/$f $d/$f
-done
-omarchy-shell shell rescanPlugins
-omarchy plugin enable aloi.meetings --section centerEnd --before omarchy.clock
+bin/install-plugin   # from the Sidecar repo
 ```
 
 Click the icon and choose **Sign in with Microsoft**.
@@ -61,7 +59,7 @@ Click the icon and choose **Sign in with Microsoft**.
 | Open in Outlook | Click the meeting | `o` |
 | Check again | Refresh button, or middle-click the bar icon | `r` |
 
-From a script: `omarchy-shell aloi.meetings join`, `… status`, `… refresh`.
+From a script: `omarchy-shell aloi.sidecar join`, `… status`, `… refresh`.
 
 ## Settings
 

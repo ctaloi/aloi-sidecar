@@ -9,6 +9,9 @@ qmake6 "$ROOT/tests/sidecar_tests.pro" >/dev/null
 make -j"$(nproc)" >/dev/null
 QT_QPA_PLATFORM=offscreen ./sidecar_tests
 
+# The bar plugin: its helper and model, under Node.
+node --test "$ROOT"/plugin/tests/*.test.js
+
 # The window itself against the stand-ins, failing on a QML warning: at a
 # desktop size, Omarchy's half of a laptop screen, and a narrow tile.
 for size in 1280x820 989x823 640x800; do

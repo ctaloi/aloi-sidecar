@@ -1,0 +1,30 @@
+#!/bin/bash
+# Link the bar widget into the Omarchy shell from this repo and put it in the
+# bar. Safe to re-run. Links per entry, bin/ and i18n/ included: the widget
+# finds its helper next to itself (Qt.resolvedUrl), so they must be there too.
+set -euo pipefail
+
+repo=$(cd "$(dirname "$0")/.." && pwd)
+plugin=~/.config/omarchy/plugins/aloi.sidecar
+shell=~/.config/omarchy/shell.json
+
+mkdir -p "$plugin"
+for f in manifest.json Service.qml BarWidget.qml MeetingsContent.qml Model.js Registry.js bin i18n; do
+  ln -sfn "$repo/plugin/$f" "$plugin/$f"
+done
+
+# The widget was the separate Aloi Meetings plugin before it moved here. Take
+# its place in the bar, settings and all, so two services never share the
+# sign-in; its keyring entry and state folder are reused as they are.
+old=~/.config/omarchy/plugins/aloi.meetings
+if grep -q '"aloi.meetings"' "$shell"; then
+  tmp=$(mktemp)
+  jq 'walk(if type == "object" and .id == "aloi.meetings" then .id = "aloi.sidecar" else . end)' "$shell" > "$tmp"
+  cat "$tmp" > "$shell" && rm -f "$tmp"
+fi
+[ -d "$old" ] && rm -rf "$old"
+
+omarchy-shell -q shell rescanPlugins
+if ! grep -q '"aloi.sidecar"' "$shell"; then
+  omarchy plugin enable aloi.sidecar right
+fi

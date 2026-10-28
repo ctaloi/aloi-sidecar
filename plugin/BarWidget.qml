@@ -14,7 +14,7 @@ import "Registry.js" as Registry
 // meetings; right-click to join the one in the bar.
 Panel {
   id: root
-  moduleName: "aloi.meetings"
+  moduleName: "aloi.sidecar"
 
   property var service: null
   readonly property string phase: service ? service.phase : "starting"
@@ -73,7 +73,7 @@ Panel {
   function bindService() {
     if (root.service) return
     var host = bar && bar.shell ? bar.shell : null
-    var s = host && typeof host.serviceFor === "function" ? host.serviceFor("aloi.meetings") : null
+    var s = host && typeof host.serviceFor === "function" ? host.serviceFor("aloi.sidecar") : null
     root.service = s || Registry.get()
   }
 
@@ -156,7 +156,7 @@ Panel {
   }
 
   IpcHandler {
-    target: "aloi.meetings"
+    target: "aloi.sidecar"
     function open(): void { root.open() }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }

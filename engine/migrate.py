@@ -2,7 +2,7 @@
 """One-off: turns the prototype's flat meetings/*.jsonl files into meeting
 folders. A file that ran through several calendar meetings (the prototype
 listened all day) is split at the midpoints between them, using the
-meetings Aloi Meetings knows about for that day. Originals are kept as
+meetings the calendar helper knows about for that day. Originals are kept as
 *.jsonl.migrated.
 
     migrate.py [--calendar events.json] [--dry-run]
@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 MEETINGS = Path.home() / ".local/share/aloi-sidecar/meetings"
-HELPER = Path.home() / "Work/meetings/bin/aloi-meetings"
+HELPER = Path(__file__).resolve().parent.parent / "plugin/bin/aloi-meetings"
 
 
 def calendar(day, override):

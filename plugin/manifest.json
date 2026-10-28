@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "aloi.meetings",
-  "name": "Aloi Meetings",
+  "id": "aloi.sidecar",
+  "name": "Aloi Sidecar",
   "version": "0.1.0",
   "author": "Chris Aloi",
   "license": "MIT",
-  "description": "Your next Microsoft 365 meeting in the bar, and today's meetings with a Join button.",
+  "description": "Your next Microsoft 365 meeting in the bar, today's meetings with a Join button, and Aloi Sidecar listening.",
   "kinds": [
     "service",
     "bar-widget"
@@ -16,7 +16,7 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Aloi Meetings",
+    "displayName": "Aloi Sidecar",
     "description": "Next meeting within half an hour, today's list, one-click join",
     "category": "Productivity",
     "aliases": ["meetings", "calendar", "outlook", "teams", "zoom", "agenda"],

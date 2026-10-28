@@ -66,13 +66,15 @@ Claude Code.
   call lets go of the mic the meeting ends half a minute later unless you
   click Not now. Dictation (Superwhisper) doesn't count. Turn it off in the
   settings menu (⋯ at the top).
-- **It knows your calendar.** Through the Aloi Meetings sign-in, a call is
+- **It knows your calendar.** Through its Microsoft 365 sign-in, a call is
   named after the meeting it is, with who was invited. Two minutes before
   a meeting a notification offers **Join and listen**; when the next
   meeting begins while another is still being heard, it offers to switch
-  (and does, after a minute). The Aloi Meetings bar item turns red with the
-  elapsed time while Sidecar listens, and its panel has Join and listen,
-  Stop, and what's left to wrap up.
+  (and does, after a minute).
+- **In the bar.** Sidecar's bar item (`plugin/`, once Aloi Meetings) shows
+  the next meeting half an hour out and today's list with Join. It turns
+  red with the elapsed time while Sidecar listens, and its panel has Join
+  and listen, Stop, and what's left to wrap up. See `plugin/README.md`.
 - **Takeaways while you talk.** Every couple of minutes Haiku keeps four
   short lists in the agent panel: asked and not answered, what you said
   you'd do, decided, and open. `m` marks a moment, `n` types a note; both
@@ -183,6 +185,7 @@ bin/test       # unit tests, then the window offscreen at three sizes
 engine/.venv/bin/python tests/engine_wrapup.py   # wrap-up and Send against a fake Claude and Notion
 bin/shots      # screenshots into docs/, against the stand-in engine and Claude
 bin/install    # the engine's environment, models and service, then the package
+bin/install-plugin   # the bar item, linked from plugin/
 ```
 
 Needs `qt6-base`, `qt6-declarative`, `qt6-wayland`, `uv` and Claude Code.

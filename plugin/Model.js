@@ -1,4 +1,4 @@
-// Pure helpers behind Aloi Meetings. Everything here is plain data in, plain
+// Pure helpers behind the Aloi Sidecar bar widget. Everything here is plain data in, plain
 // data out, so Node tests can exercise it without a shell. Times arrive as
 // UTC ISO strings from bin/aloi-meetings; "now" is always passed in as
 // milliseconds, never read from the clock.

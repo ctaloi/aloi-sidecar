@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The calendar side of the engine, against a stand-in Aloi Meetings helper:
+"""The calendar side of the engine, against a stand-in calendar helper:
 which meeting a call is, what's about to start, and what a meeting keeps.
 
     engine/.venv/bin/python tests/engine_agenda.py

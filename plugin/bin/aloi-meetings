@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Today's Microsoft 365 meetings for the Aloi Meetings bar widget.
+"""Today's Microsoft 365 meetings for the Aloi Sidecar bar widget and engine.
 
   aloi-meetings status            {"signedIn": bool, "account": "..."}
   aloi-meetings login             sign in through the browser (auth code + PKCE)
@@ -149,7 +149,7 @@ def keyring_get():
 def keyring_put(token):
     if not keyring_available():
         raise Failure("keyring", "secret-tool isn't installed")
-    r = subprocess.run(["secret-tool", "store", "--label=Aloi Meetings", *KEYRING],
+    r = subprocess.run(["secret-tool", "store", "--label=Aloi Sidecar", *KEYRING],
                        input=token, capture_output=True, text=True)
     if r.returncode != 0:
         raise Failure("keyring", r.stderr.strip() or "couldn't save to the keyring")
@@ -258,7 +258,7 @@ def login(opts):
             ok = "code" in result
             page = PAGE.format(
                 title="You're signed in" if ok else "Sign-in didn't finish",
-                body="Aloi Meetings can see your calendar now. You can close this tab."
+                body="Aloi Sidecar can see your calendar now. You can close this tab."
                 if ok else html.escape(result["error"].detail or "Try again from the bar."))
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -302,7 +302,7 @@ def login(opts):
     return {"signedIn": True, "account": read_json(os.path.join(STATE, "account.json")).get("account", "")}
 
 
-PAGE = """<!doctype html><meta charset="utf-8"><title>Aloi Meetings</title>
+PAGE = """<!doctype html><meta charset="utf-8"><title>Aloi Sidecar</title>
 <style>body{{font:16px system-ui,sans-serif;display:grid;place-items:center;height:90vh;margin:0;color:#ddd;background:#1c1c1c}}
 main{{max-width:28em;text-align:center}}h1{{font-size:1.4em;font-weight:600}}p{{color:#aaa}}</style>
 <main><h1>{title}</h1><p>{body}</p></main>"""
