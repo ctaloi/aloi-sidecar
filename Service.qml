@@ -89,7 +89,7 @@ Item {
   }
 
   // ---------- Aloi Sidecar ----------
-  // Sidecar (~/Work/sidecar) hears and transcribes calls. Its engine runs on
+  // Sidecar (~/Work/aloi-sidecar) hears and transcribes calls. Its engine runs on
   // this machine; the bar shows when it's listening, and the panel can start
   // it for a meeting, stop it, or open it for the meetings still to wrap up.
 
