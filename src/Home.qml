@@ -315,7 +315,11 @@ Rectangle {
                     Layout.fillWidth: true
                     rows: root.open.slice(0, 6).map(f => ({
                         mark: "followups", tone: theme.accent, text: f.text, detail: f.title || "",
-                        right: f.due || "", rightTone: theme.accent, run: () => win.openFrom(f.meeting, f.at === undefined ? -1 : f.at)
+                        right: f.due || "", rightTone: theme.accent, run: () => win.openFrom(f.meeting, f.at === undefined ? -1 : f.at),
+                        check: () => {
+                            engine.setFollowupDone(f.meeting, f.index, true)
+                            toast.show(qsTr("Done. It's under Follow-ups › Done (g f)."))
+                        }
                     }))
                 }
             }
@@ -455,13 +459,39 @@ Rectangle {
                         opacity: 0.5
                     }
                     HoverHandler { id: lineHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: line.modelData.run() }
+                    // A MouseArea, not a TapHandler, so the tick box's own
+                    // takes the click and the row doesn't open as well.
+                    MouseArea { anchors.fill: parent; onClicked: line.modelData.run() }
                     RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: 14
                         anchors.rightMargin: 16
                         spacing: 10
-                        Glyph { name: line.modelData.mark; color: line.modelData.tone; font.pixelSize: 13 }
+                        Glyph {
+                            visible: !line.modelData.check
+                            name: line.modelData.mark
+                            color: line.modelData.tone
+                            font.pixelSize: 13
+                        }
+                        // A row that can be done: ticking it checks it off.
+                        Rectangle {
+                            objectName: "markDone"
+                            visible: !!line.modelData.check
+                            width: 16; height: 16
+                            radius: Math.min(3, theme.radius)
+                            color: tickHover.hovered ? ui.wash(theme.accent, 0.18) : "transparent"
+                            border.color: tickHover.hovered ? theme.accent : ui.muted
+                            HoverHandler { id: tickHover }
+                            ToolTip.visible: tickHover.hovered
+                            ToolTip.delay: 500
+                            ToolTip.text: qsTr("Mark done")
+                            MouseArea {
+                                anchors.fill: parent
+                                anchors.margins: -6
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: line.modelData.check()
+                            }
+                        }
                         Label {
                             text: line.modelData.text
                             color: ui.text

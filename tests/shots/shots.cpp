@@ -6,6 +6,7 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickItem>
+#include <functional>
 #include <QQuickWindow>
 #include <QProcess>
 #include <QMouseEvent>
@@ -247,6 +248,32 @@ int main(int argc, char *argv[]) {
     escape();
     escape();
     expect("esc, out of the ask box, then home", view() == "home");
+    // Ticking a follow-up on Home checks it off and stays on Home.
+    auto open = [&] {
+        int n = 0;
+        for (const QVariant &f : engine.followups())
+            n += !f.toMap().value("done").toBool();
+        return n;
+    };
+    // Repeater rows are only visual children, so findChildren misses them.
+    std::function<QQuickItem *(QQuickItem *)> find = [&](QQuickItem *item) -> QQuickItem * {
+        if (item->objectName() == "markDone" && item->isVisible())
+            return item;
+        for (QQuickItem *child : item->childItems())
+            if (QQuickItem *found = find(child))
+                return found;
+        return nullptr;
+    };
+    QQuickItem *tick = find(window->contentItem());
+    expect("a tick box on Home's follow-ups", tick);
+    if (tick) {
+        const int before = open();
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, tick->mapToScene(QPointF(8, 8)).toPoint());
+        wait(300);
+        expect("the tick to check the follow-up off", open() == before - 1);
+        expect("the tick to stay on Home", view() == "home");
+        QMetaObject::invokeMethod(keyRoot, "forceActiveFocus");
+    }
     press("/");
     expect("/ to search", window->activeFocusItem() && window->activeFocusItem()->objectName() == "search");
     escape();
