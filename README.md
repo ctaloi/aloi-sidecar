@@ -174,6 +174,10 @@ goes back. A capital is Shift (`C` is Shift+C); `g h` is g, then h.
 
 ## Build
 
+Needs Aloi UI beside it, in `~/Work/aloi-ui`: the bar, buttons, palette,
+theme and scrolling every Aloi app shares. The build stops and says so if
+it's missing.
+
 ```sh
 bin/build      # build/aloi-sidecar
 bin/test       # unit tests, then the window offscreen at three sizes
