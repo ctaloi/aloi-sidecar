@@ -209,7 +209,6 @@ public:
     // engine to say so, so nothing is heard with the app closed.
     void stopListeningNow();
     // Listen as soon as the engine is reachable (the app was opened for a call).
-    void setListenOnConnect(bool on) { m_listenOnConnect = on; }
 
     // One event from the stream, as the engine sends it. Public for tests.
     void handleEvent(const QJsonObject &event);

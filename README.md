@@ -14,9 +14,9 @@ Claude Code.
   each display) is "Them", so it doesn't matter where the call's audio goes
   or which app the call is in. Speech is transcribed on this machine with
   NVIDIA's Parakeet (sherpa-onnx); no audio leaves the laptop.
-- **Listening is never in doubt.** Opening Sidecar starts listening, the
-  pill at the top left pulses red while it does, Space pauses, and closing
-  the window stops it. Nothing is heard while Sidecar is closed.
+- **Listening is never in doubt.** Opening Sidecar doesn't listen until you
+  press Space (or Record it), the pill at the top left pulses red while it
+  does, Space pauses, and closing the window stops it. Nothing is heard while Sidecar is closed.
 - **Ask anything about the call.** "What did I miss?", "Has anyone asked me
   something I haven't answered?", or "look up their numbers": the agent
   gets the lines said since your last question and can use your skills
@@ -148,8 +148,7 @@ goes back. A capital is Shift (`C` is Shift+C); `g h` is g, then h.
 | Right-click → Merge | Two meetings that were one call become one (the earlier keeps its title) |
 
 `aloi-sidecar --ask` brings Sidecar forward with the cursor in the ask box
-(for a Hyprland binding); `--toggle` turns listening on or off;
-`--no-listen` opens without listening.
+(for a Hyprland binding); `--toggle` turns listening on or off.
 
 ## How it fits together
 

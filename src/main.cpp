@@ -37,8 +37,7 @@ int main(int argc, char *argv[]) {
     parser.addVersionOption();
     const QCommandLineOption ask("ask", "Bring Sidecar forward with the cursor in the ask box.");
     const QCommandLineOption toggle("toggle", "Turn listening on or off.");
-    const QCommandLineOption quiet("no-listen", "Open without starting to listen.");
-    parser.addOptions({ask, toggle, quiet});
+    parser.addOptions({ask, toggle});
     parser.process(app);
     const QString action = parser.isSet(ask) ? "ask" : parser.isSet(toggle) ? "toggle" : "";
 
@@ -69,9 +68,8 @@ int main(int argc, char *argv[]) {
     if (!App::load(qml, theme, engine, agent, &instance))
         return 1;
 
-    // Opening Sidecar is for a call, so it starts listening; closing it
-    // stops, so nothing is heard while it's closed.
-    engine.setListenOnConnect(!parser.isSet(quiet));
+    // Opening Sidecar never starts listening by itself; closing it stops,
+    // so nothing is heard while it's closed.
     QObject::connect(&app, &QGuiApplication::aboutToQuit, &engine, &Engine::stopListeningNow);
     engine.connectToEngine();
     return app.exec();
