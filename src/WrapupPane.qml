@@ -184,16 +184,16 @@ Rectangle {
                     spacing: 8
                     topPadding: 8
                     visible: (root.m.lines || 0) > 0
-                    ActionButton {
+                    KeyButton {
                         primary: true
                         text: root.w.state === "failed" ? qsTr("Try again") : qsTr("Draft the wrap-up")
-                        keys: "D"
+                        keys: "d"
                         onClicked: win.act("draft", root.m)
                     }
-                    ActionButton {
+                    KeyButton {
                         visible: !root.m.skipped
                         text: qsTr("No wrap-up needed")
-                        keys: "X"
+                        keys: "x"
                         onClicked: win.act("skip", root.m)
                     }
                 }
@@ -292,7 +292,7 @@ Rectangle {
                     }
                     // Everything after the call in one click: a new Notion page
                     // and the follow-up email saved to Outlook Drafts.
-                    ActionButton {
+                    KeyButton {
                         visible: root.stage !== "sent" && root.stage !== "sending" && root.stage !== "sendFailed"
                         primary: true
                         implicitHeight: 30
@@ -302,7 +302,7 @@ Rectangle {
                         tip: qsTr("File it in Notion as a new page and save the follow-up email to Outlook Drafts (never sent)")
                         onClicked: win.act("finish", root.m)
                     }
-                    ActionButton {
+                    KeyButton {
                         visible: root.stage !== "sent"
                         primary: root.stage === "sending" || root.stage === "sendFailed"
                         implicitHeight: 30
@@ -314,14 +314,14 @@ Rectangle {
                         tip: qsTr("Send to Notion: a new page, or fill in one already there")
                         onClicked: win.act("send", root.m)
                     }
-                    ActionButton {
+                    KeyButton {
                         visible: root.stage === "sent"
                         implicitHeight: 30
                         text: qsTr("Open in Notion ↗")
-                        keys: "O"
+                        keys: "o"
                         onClicked: win.act("notion", root.m)
                     }
-                    ActionButton {
+                    KeyButton {
                         visible: root.width >= 440
                         implicitHeight: 30
                         text: qsTr("Email")
@@ -329,7 +329,7 @@ Rectangle {
                         keys: root.width >= 780 ? "W" : ""
                         onClicked: win.act("email", root.m)
                     }
-                    ActionButton {
+                    KeyButton {
                         visible: root.width >= 680
                         implicitHeight: 30
                         text: qsTr("Copy")
@@ -497,8 +497,8 @@ Rectangle {
                         Chip {
                             required property string modelData
                             text: modelData
-                            filled: !!root.doc && root.doc.format === modelData
-                            tone: filled ? theme.accent : ui.faint
+                            strong: !!root.doc && root.doc.format === modelData
+                            tone: strong ? theme.accent : ui.faint
                             HoverHandler { cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { root.doc.format = modelData; root.rebuilt() } }
                         }
@@ -518,9 +518,8 @@ Rectangle {
 
     // ---- pieces ----
 
-    // A section's name in small capitals, how many, and + to add one.
-    component Heading: RowLayout {
-        id: heading
+    // A section's name, how many, and + Add, as every Aloi app titles one.
+    component Heading: SectionTitle {
         property string text
         property int count: -1
         property bool accent: false
@@ -528,32 +527,10 @@ Rectangle {
         Layout.fillWidth: true
         Layout.topMargin: 24
         Layout.bottomMargin: 8
-        spacing: 8
-        Label {
-            text: heading.text.toUpperCase()
-            color: heading.accent ? theme.accent : ui.muted
-            font.pixelSize: 11
-            font.letterSpacing: 1.5
-            font.bold: true
-        }
-        Label {
-            visible: heading.count > 0
-            text: heading.count
-            color: ui.faint
-            font.pixelSize: 11
-        }
-        Rectangle { Layout.fillWidth: true; height: 1; color: ui.line; Layout.alignment: Qt.AlignVCenter }
-        Label {
-            visible: heading.count >= 0
-            text: "+"
-            color: addHover.hovered ? theme.accent : ui.faint
-            font.pixelSize: 16
-            HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: heading.add() }
-            ToolTip.visible: addHover.hovered
-            ToolTip.delay: 500
-            ToolTip.text: qsTr("Add")
-        }
+        title: text
+        detail: count > 0 ? String(count) : ""
+        action: count >= 0 ? qsTr("+ Add") : ""
+        onActionTriggered: add()
     }
 
     component Empty: Label {
@@ -607,9 +584,9 @@ Rectangle {
         }
     }
 
-    component Remove: Label {
+    component Remove: Glyph {
         signal clicked()
-        text: "×"
+        name: "close"
         color: removeArea.containsMouse ? ui.danger : ui.faint
         font.pixelSize: 15
         MouseArea {

@@ -1,19 +1,24 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Controls.Material
 import QtQuick.Layouts
+import "sidecar.js" as Sidecar
 
-// The one bar: the app, whether it's listening (the thing that must never
-// be in doubt) and what each input hears, search, settings, and the keys.
+// The Aloi bar: the app, the switch between Home, the meetings and the
+// follow-ups (each with what's waiting on you), whether it's listening and
+// what each input hears (the thing that must never be in doubt), whether
+// the engine is there, search, settings, the roll-up, and the keys.
 Rectangle {
     id: bar
-    implicitHeight: 46
+    implicitHeight: 52
     color: ui.window
 
     property alias search: field
     signal toggleList()
     // Roll the window up to a small bar of its own (B).
     signal shade()
+    signal leave()
+    signal moveRequested(int delta)
+    function focusSearch() { field.forceActiveFocus(); field.selectAll() }
 
     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: ui.line }
 
@@ -23,58 +28,43 @@ Rectangle {
         anchors.rightMargin: 14
         spacing: 18
 
-        // The meetings: a column in a wide window, a drawer in a narrow one.
-        Rectangle {
-            implicitWidth: 30; implicitHeight: 30
-            radius: Math.min(4, theme.radius)
-            color: menuHover.hovered ? ui.hover : "transparent"
-            Column {
-                anchors.centerIn: parent
-                spacing: 3
-                Repeater {
-                    model: 3
-                    Rectangle { width: 14; height: 2; radius: 1; color: menuHover.hovered ? ui.text : ui.muted }
-                }
-            }
-            HoverHandler { id: menuHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: bar.toggleList() }
-            ToolTip.visible: menuHover.hovered
-            ToolTip.delay: 400
-            ToolTip.text: qsTr("Meetings (\\)")
+        // A narrow window keeps the meetings in a drawer: this opens it.
+        KeyButton {
+            visible: !win.listFits
+            glyph: "menu"
+            tip: qsTr("Meetings")
+            keys: "\\"
+            onClicked: bar.toggleList()
         }
 
         // The mark: the logo, whose wave moves while listening, and the name
-        // in the Omarchy way.
-        Row {
-            spacing: 10
-            Logo { size: 26; anchors.verticalCenter: parent.verticalCenter; running: engine.listening }
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                textFormat: Text.StyledText
-                text: "<font color='" + ui.faint + "'>aloi</font> sidecar"
-                color: ui.text
-                font.pixelSize: 15
-                font.bold: true
-            }
-            HoverHandler { cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: bar.toggleList() }
-        }
+        // in the Omarchy way. It goes home.
+        AppMark { name: "sidecar"; running: engine.listening; onTapped: win.goHome() }
 
-        // Meetings, or every follow-up across them.
-        UnderlineTabs {
-            Layout.fillHeight: true
-            visible: bar.width > 900
-            tabs: [
-                { label: qsTr("Meetings"), current: win.view === "meetings", keys: "F", run: () => win.view = "meetings" },
-                { label: qsTr("Follow-ups"), count: engine.followupsOpen, current: win.view === "followups", keys: "F", run: () => win.view = "followups" }
+        // Home, the meeting on screen, or the follow-ups. Meetings counts
+        // the wrap-ups waiting on you; Follow-ups what you said you'd do.
+        ScopeSwitch {
+            // Short of room, the list's drawer and g h / g m / g f stand in.
+            visible: bar.width >= 1100
+            hint: ""
+            scopes: [
+                { key: "home", label: qsTr("Home"), glyph: "home", keys: "g h", current: win.view === "home",
+                  tip: qsTr("What's on, and what's waiting on you") },
+                { key: "meetings", label: qsTr("Meetings"), glyph: "meetings", keys: "g m", current: win.view === "meetings",
+                  count: win.waiting.length,
+                  tip: win.waiting.length > 0 ? qsTr("%n waiting on a wrap-up", "", win.waiting.length) : qsTr("Every meeting is wrapped up") },
+                { key: "followups", label: qsTr("Follow-ups"), glyph: "followups", keys: "g f", current: win.view === "followups",
+                  count: engine.followupsOpen,
+                  tip: engine.followupsOpen > 0 ? qsTr("%n you said you'd do", "", engine.followupsOpen) : qsTr("Nothing you said you'd do is open") }
             ]
+            onPicked: key => key === "meetings" ? win.openSelected() : win.showScope(key)
         }
 
         // Listening, paused or offline, and the switch for it.
         Rectangle {
             id: pill
             implicitWidth: pillRow.implicitWidth + 22
-            implicitHeight: 30
+            implicitHeight: 34
             radius: Math.min(4, theme.radius)
             color: engine.listening ? ui.alpha(ui.live, pillHover.hovered ? 0.26 : 0.16)
                                     : (pillHover.hovered ? ui.hover : "transparent")
@@ -91,7 +81,7 @@ Rectangle {
                 }
                 Label {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: !engine.connected ? qsTr("Engine offline")
+                    text: !engine.connected ? qsTr("Can't listen")
                         : engine.listening ? qsTr("Listening")
                         : engine.current !== "" ? qsTr("Paused") : qsTr("Not listening")
                     color: engine.connected ? ui.text : ui.danger
@@ -122,7 +112,7 @@ Rectangle {
                         }
                     }
                 }
-                KeyCap { text: "space"; visible: engine.connected; anchors.verticalCenter: parent.verticalCenter }
+                KeyCap { text: "space"; visible: engine.connected && bar.width > 760; anchors.verticalCenter: parent.verticalCenter }
             }
             HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: engine.toggleListening() }
@@ -135,46 +125,33 @@ Rectangle {
 
         Item { Layout.fillWidth: true }
 
-        // Search the meetings by title.
-        Rectangle {
-            implicitWidth: Math.min(260, Math.max(150, bar.width * 0.2))
-            implicitHeight: 30
-            radius: Math.min(4, theme.radius)
-            color: "transparent"
-            border.color: field.activeFocus ? theme.accent : ui.line
-            visible: bar.width > 600 || field.activeFocus || field.text !== ""
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 10
-                anchors.rightMargin: 8
-                spacing: 8
-                Label { text: "⌕"; color: ui.faint; font.pixelSize: 14 }
-                TextInput {
-                    id: field
-                    objectName: "search"
-                    Layout.fillWidth: true
-                    color: ui.text
-                    font.pixelSize: 12
-                    clip: true
-                    selectByMouse: true
-                    Keys.onEscapePressed: { text = ""; focus = false }
-                    Label {
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: field.text === ""
-                        text: qsTr("Search transcripts")
-                        color: ui.faint
-                        font.pixelSize: 12
-                    }
-                }
-                KeyCap { text: "ctrl+F"; visible: !field.activeFocus && bar.width > 820 }
+        // Is the engine there? A dot; words only when it isn't.
+        StatusDot {
+            busy: engine.connected && engine.loading
+            trouble: !engine.connected
+            text: engine.connected ? "" : qsTr("Engine offline")
+            tip: engine.connected ? qsTr("The engine is listening for you  ·  127.0.0.1:8777")
+                : (engine.error || qsTr("The engine isn't running")) + "  ·  systemctl --user start aloi-sidecar-engine"
+        }
+
+        // What was said, in every meeting: the list narrows as you type.
+        BarSearch {
+            id: field
+            objectName: "search"
+            visible: bar.width > 720 || activeFocus || text !== ""
+            placeholderText: qsTr("Search transcripts")
+            Keys.onDownPressed: bar.moveRequested(1)
+            Keys.onUpPressed: bar.moveRequested(-1)
+            Keys.onEscapePressed: {
+                if (text !== "") text = ""
+                bar.leave()
             }
         }
 
         // Sidecar's own settings, few on purpose.
-        ActionButton {
+        KeyButton {
             id: settingsButton
-            menu: true
-            implicitHeight: 30
+            glyph: "more"
             tip: qsTr("Settings")
             onClicked: settingsMenu.popup(settingsButton, settingsButton.width - 300, settingsButton.height + 6)
             SideMenu {
@@ -215,22 +192,13 @@ Rectangle {
             }
         }
 
-        ActionButton {
-            implicitHeight: 30
-            text: "▴"
-            tip: qsTr("Roll up to a small bar on every workspace (B)")
+        KeyButton {
+            glyph: "rollup"
+            tip: qsTr("Roll up to a small bar on every workspace")
+            keys: "b"
             onClicked: bar.shade()
         }
 
-        KeyCap {
-            text: "?"
-            tone: keysHover.hovered ? ui.text : ui.faint
-            implicitWidth: 22; implicitHeight: 22
-            HoverHandler { id: keysHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: keys.open() }
-            ToolTip.visible: keysHover.hovered
-            ToolTip.delay: 400
-            ToolTip.text: qsTr("Every key")
-        }
+        KeysButton { onClicked: win.showKeys() }
     }
 }

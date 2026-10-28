@@ -17,7 +17,7 @@
 #include "../../src/app.h"
 #include "../../src/engine.h"
 #include "../../src/instance.h"
-#include "../../src/theme.h"
+#include "theme.h"
 
 static int warnings = 0;
 
@@ -92,6 +92,10 @@ int main(int argc, char *argv[]) {
     }
     wait(800);
     QDir().mkpath(out);
+    // Home first, where it opens; then the meeting that's on.
+    window->grabWindow().save(out + "/home-" + size + ".png");
+    window->setProperty("view", "meetings");
+    wait(400);
     window->grabWindow().save(out + "/listening-" + size + ".png");
 
     // Rolled up to its bar; offscreen there's no Hyprland to size it, so
@@ -178,13 +182,11 @@ int main(int argc, char *argv[]) {
                                qEnvironmentVariable("SIDECAR_ENGINE") + "/_call"});
     engine.select(engine.current());
     shot("call", 900);
-    QMetaObject::invokeMethod(window->findChild<QObject *>("keys"), "open");
-    shot("keys", 400);
-    QKeyEvent escKeys(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
-    QGuiApplication::sendEvent(window, &escKeys);
-    QMetaObject::invokeMethod(window->findChild<QObject *>("keys"), "close");
     QObject *palette = window->findChild<QObject *>("palette");
-    QMetaObject::invokeMethod(palette, "show");
+    QMetaObject::invokeMethod(palette, "open", Q_ARG(QVariant, true));
+    shot("keys", 400);
+    QMetaObject::invokeMethod(palette, "close");
+    QMetaObject::invokeMethod(palette, "open", Q_ARG(QVariant, false));
     shot("palette", 400);
     for (const QChar c : QStringLiteral("harb")) {
         QKeyEvent press(QEvent::KeyPress, 0, Qt::NoModifier, QString(c));

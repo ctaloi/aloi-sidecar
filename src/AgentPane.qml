@@ -1,4 +1,5 @@
 import QtQuick
+import Aloi
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
@@ -65,7 +66,7 @@ Rectangle {
             onContentHeightChanged: if (stick) Qt.callLater(follow)
             onContentYChanged: if (!following && height > 0) stick = atYEnd || contentHeight <= height
             onHeightChanged: if (height > 0 && stick) Qt.callLater(follow)
-            SmoothScroll { flick: list }
+            Kinetic { target: list }
 
             // ListView pins delegates to x: 0, so the margin goes inside a full-width item.
             delegate: Item {
@@ -211,17 +212,17 @@ Rectangle {
                     Flow {
                         Layout.fillWidth: true
                         spacing: 8
-                        ActionButton {
+                        KeyButton {
                             text: index === 0 ? qsTr("Allow (Y)") : qsTr("Allow")
                             primary: true
                             onClicked: agent.decide(modelData.id, "once")
                         }
-                        ActionButton {
+                        KeyButton {
                             visible: modelData.skill !== ""
                             text: qsTr("Always for %1").arg(modelData.skill)
                             onClicked: agent.decide(modelData.id, "skill")
                         }
-                        ActionButton {
+                        KeyButton {
                             text: index === 0 ? qsTr("Deny (N)") : qsTr("Deny")
                             onClicked: agent.decide(modelData.id, "deny")
                         }
@@ -333,12 +334,25 @@ Rectangle {
                     else focus = false
                 }
             }
-            ActionButton {
+            KeyButton {
                 text: agent.running ? qsTr("Stop") : qsTr("Ask")
+                glyph: agent.running ? "stop" : "send"
                 primary: !agent.running
                 implicitHeight: field.height - 8
                 onClicked: agent.running ? agent.stop() : pane.ask(field.text)
             }
+        }
+        // What the keys do here, as under every Aloi agent's box.
+        Label {
+            Layout.leftMargin: 18
+            Layout.bottomMargin: 10
+            Layout.topMargin: -6
+            textFormat: Text.StyledText
+            text: "<font color='" + theme.accent + "'>enter</font> asks    <font color='" + theme.accent + "'>ctrl+a</font> "
+                  + (agent.wide ? qsTr("back to this meeting") : qsTr("asks every meeting"))
+                  + "    <font color='" + theme.accent + "'>esc</font> " + (agent.running ? qsTr("stops it") : qsTr("leaves"))
+            color: ui.faint
+            font.pixelSize: 11
         }
     }
 }

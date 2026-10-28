@@ -76,10 +76,10 @@ Rectangle {
                     }
                 }
             }
-            Label {
-                text: card.open ? "▾" : "▸"
+            Glyph {
+                name: card.open ? "rolldown" : "chevron"
                 color: ui.faint
-                font.pixelSize: 11
+                font.pixelSize: 13
             }
         }
 

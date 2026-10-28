@@ -42,7 +42,7 @@ Flow {
                 spacing: 2
                 Row {
                     spacing: 6
-                    Text { text: card.done ? "✓" : "⌕"; color: theme.accent; font.pixelSize: 12 }
+                    Glyph { name: card.done ? "check" : "search"; color: theme.accent; font.pixelSize: 12 }
                     Text {
                         text: (cards.kinds[card.modelData.kind] || cards.kinds.other).toUpperCase()
                         color: ui.faint

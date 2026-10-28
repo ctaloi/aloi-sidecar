@@ -5,16 +5,11 @@
         <file>TranscriptPane.qml</file>
         <file>AgentPane.qml</file>
         <file>MeetingHeader.qml</file>
-        <file>SmoothScroll.qml</file>
         <file>LookupCards.qml</file>
         <file>BriefCard.qml</file>
-        <file>CommandPalette.qml</file>
-        <file>KeysOverlay.qml</file>
-        <file>ActionButton.qml</file>
         <file>TopBar.qml</file>
         <file>KeyCap.qml</file>
         <file>Logo.qml</file>
-        <file>Chip.qml</file>
         <file>MeetingList.qml</file>
         <file>MeetingPane.qml</file>
         <file>sidecar.js</file>
@@ -26,12 +21,11 @@
         <file>MenuRow.qml</file>
         <file>MenuLine.qml</file>
         <file>MeetingMenu.qml</file>
-        <file>ConfirmOverlay.qml</file>
         <file>SendSheet.qml</file>
         <file>Toast.qml</file>
-        <file>UnderlineTabs.qml</file>
         <file>StageChip.qml</file>
         <file>CallBanner.qml</file>
         <file>MiniBar.qml</file>
+        <file>Home.qml</file>
     </qresource>
 </RCC>

@@ -1,4 +1,5 @@
 import QtQuick
+import Aloi
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import "sidecar.js" as Sidecar
@@ -80,7 +81,7 @@ Rectangle {
         }
         MenuRow {
             text: qsTr("Copy the transcript")
-            keys: "shift+C"
+            keys: "C"
             onTriggered: win.act("copyTranscript", engine.selectedMeeting)
         }
     }
@@ -115,7 +116,7 @@ Rectangle {
         onHeightChanged: if (height > 0 && (stick || contentHeight <= height)) { stick = true; Qt.callLater(follow) }
         onCountChanged: if (stick) Qt.callLater(follow)
         onContentHeightChanged: if (stick) Qt.callLater(follow)
-        SmoothScroll { flick: list }
+        Kinetic { target: list }
 
         delegate: Item {
             id: row
@@ -325,7 +326,7 @@ Rectangle {
         }
     }
 
-    ActionButton {
+    KeyButton {
         anchors.bottom: noteBar.top
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottomMargin: 12

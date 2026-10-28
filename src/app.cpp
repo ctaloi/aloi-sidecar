@@ -8,6 +8,7 @@
 #include <QUrl>
 
 #include "agent.h"
+#include "aloiui.h"
 #include "engine.h"
 #include "instance.h"
 #include "shade.h"
@@ -15,6 +16,7 @@
 
 void App::prepare() {
     QQuickStyle::setStyle("Material");
+    aloi::registerQmlTypes();
     // The whole app speaks in the Omarchy font, like the terminal and the
     // bar: fontconfig's monospace is what Omarchy's font picker sets.
     QFont font("monospace");

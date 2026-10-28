@@ -57,11 +57,11 @@ Rectangle {
                 Label {
                     text: qsTr("Follow-ups")
                     color: ui.text
-                    font.pixelSize: 21
+                    font.pixelSize: 26
                     font.bold: true
                 }
                 Item { Layout.fillWidth: true }
-                ActionButton {
+                KeyButton {
                     implicitHeight: 30
                     text: engine.syncing ? qsTr("Checking Notion") : qsTr("Check Notion")
                     busy: engine.syncing
@@ -219,9 +219,9 @@ Rectangle {
                                 }
                             }
                             // Gone, not done.
-                            Label {
+                            Glyph {
                                 Layout.alignment: Qt.AlignTop
-                                text: "×"
+                                name: "close"
                                 opacity: rowHover.hovered ? 1 : 0
                                 color: removeHover.hovered ? ui.danger : ui.faint
                                 font.pixelSize: 14

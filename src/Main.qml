@@ -5,10 +5,11 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 import "sidecar.js" as Sidecar
 
-// One bar that says whether Sidecar is listening; every meeting on the
-// left; the meeting on screen in the middle, as it's said or what it came
-// to; and the agent on the right, asked about that meeting and no other.
-// Space listens, / asks, ? shows the keys, right-click does the rest.
+// The Aloi bar, with whether Sidecar is listening; every meeting on the
+// left; and in the middle Home (what's on and what's waiting on you), or
+// the meeting on screen, as it's said or what it came to, with the agent
+// asked about it and no other. Space listens, > asks, / searches, ; runs
+// any command, ? lists the keys, right-click does the rest.
 ApplicationWindow {
     id: win
     width: 1440
@@ -38,12 +39,36 @@ ApplicationWindow {
 
     readonly property bool typing: activeFocusItem !== null
         && (activeFocusItem instanceof TextInput || (activeFocusItem instanceof TextEdit && !activeFocusItem.readOnly))
-    readonly property bool overlayOpen: keys.visible || palette.visible || confirm.visible || sendSheet.visible || emailSheet.visible
+    readonly property bool overlayOpen: palette.visible || confirm.visible || sendSheet.visible || emailSheet.visible
     readonly property bool idle: !typing && !overlayOpen
     readonly property var shown: engine.selectedMeeting
     readonly property string stage: Sidecar.stage(shown)
-    // Meetings, or every follow-up across them (F).
-    property string view: "meetings"
+    // Meetings waiting on a wrap-up, oldest first: the Meetings count and Home's cards.
+    readonly property var waiting: engine.meetings.filter(m => Sidecar.needsWrapup(m, Date.now()))
+                                        .sort((a, b) => a.started - b.started)
+    // Home, a meeting, or every follow-up across them (g h, g m, g f).
+    property string view: "home"
+    function goHome() { setShaded(false); view = "home" }
+    function showScope(key) { setShaded(false); view = key }
+    function showKeys() { palette.open(true) }
+    function focusSearch() { if (listFits) listHidden = false; topBar.focusSearch() }
+    function openSelected() { if (engine.selected !== "") openFrom(engine.selected, -1) }
+    // Esc: out of the search, then stop the agent, then back home.
+    function back() {
+        if (topBar.search.text !== "") { topBar.search.text = ""; return }
+        if (agent.running) { agent.stop(); return }
+        if (view !== "home") goHome()
+    }
+    function askAgent() { showAgent(); meetingPane.agentPane.input.forceActiveFocus() }
+    function quit() {
+        if (!engine.listening) { Qt.quit(); return }
+        confirm.ask({
+            title: qsTr("Stop listening and quit?"),
+            detail: qsTr("The meeting is paused, not ended: open Sidecar again and Space carries on with it."),
+            confirm: qsTr("Quit"),
+            run: () => Qt.quit()
+        })
+    }
     function openFrom(id, at) {
         view = "meetings"
         if (width < 1100) topBar.search.text = ""  // the results stood in for the meeting; it's back
@@ -260,6 +285,113 @@ ApplicationWindow {
         function onAccepted() { win.view = "meetings"; meetingList.openFirst() }
     }
 
+    // Every command, once: the keys, the ; palette and the ? list all come
+    // from here, as in every Aloi app. seqs are Qt's spelling of the keys (a
+    // capital is Shift+, a chord is "G,H"); enabled() says when it makes
+    // sense, and the palette lists only those. always runs while typing too.
+    readonly property bool hasMeeting: shown.id !== undefined
+    readonly property bool over: hasMeeting && shown.state === "ended"
+    readonly property bool onAir: engine.current !== ""
+    readonly property bool hasNotes: over && (stage === "ready" || stage === "sendFailed" || stage === "sent" || (stage === "skipped" && shown.wrapup === "ready"))
+    readonly property var actions: [
+        { id: "listen", show: "space", seqs: ["Space"], group: qsTr("Listening"), enabled: () => engine.connected,
+          label: engine.listening ? qsTr("Pause listening") : onAir ? qsTr("Resume listening") : qsTr("Start listening"),
+          run: () => engine.toggleListening() },
+        { id: "end", show: "e", seqs: ["E"], group: qsTr("Listening"), label: qsTr("End the meeting that's on"),
+          enabled: () => onAir, run: () => act("end", engine.meetingById(engine.current)) },
+        { id: "mark", show: "m", seqs: ["M"], group: qsTr("Listening"), label: qsTr("Mark this moment"),
+          enabled: () => onAir, run: markNow },
+        { id: "new", show: "ctrl+n", seqs: ["Ctrl+N"], always: true, group: qsTr("Listening"), label: qsTr("Start a new meeting"),
+          run: newMeeting },
+
+        { id: "note", show: "n", seqs: ["N"], group: qsTr("Meeting"), label: qsTr("Note: a line of your own"),
+          enabled: () => hasMeeting && agent.approvals.length === 0, run: () => meetingPane.note() },
+        { id: "rename", show: "r", seqs: ["R"], group: qsTr("Meeting"), label: qsTr("Rename"),
+          enabled: () => hasMeeting, run: () => meetingPane.rename() },
+        { id: "tab", show: "t", seqs: ["T"], group: qsTr("Meeting"), label: qsTr("Agent / transcript / notes"),
+          enabled: () => hasMeeting, run: () => { view = "meetings"; meetingPane.toggleTab() } },
+        { id: "live", show: "end", seqs: ["End"], group: qsTr("Meeting"), label: qsTr("The transcript, at the newest line"),
+          enabled: () => hasMeeting, run: () => { view = "meetings"; meetingPane.tab = "transcript"; meetingPane.transcriptPane.toLive() } },
+        { id: "continue", show: "", seqs: [], group: qsTr("Meeting"), label: qsTr("Continue this meeting"),
+          enabled: () => over && !onAir, run: () => act("listen", shown) },
+        { id: "files", show: "", seqs: [], group: qsTr("Meeting"), label: qsTr("Show its files"),
+          enabled: () => hasMeeting, run: () => act("files", shown) },
+        { id: "merge", show: "", seqs: [], group: qsTr("Meeting"), label: qsTr("Merge with another meeting"),
+          enabled: () => over, run: () => act("merge", shown) },
+        { id: "more", show: ".", seqs: [".", "Menu", "Shift+F10"], group: qsTr("Meeting"), label: qsTr("Its menu (the ⋯ by its title)"),
+          enabled: () => hasMeeting, run: () => { view = "meetings"; meetingPane.openMenu() } },
+        { id: "delete", show: "del", seqs: ["Del"], group: qsTr("Meeting"), label: qsTr("Delete the meeting"), danger: true,
+          enabled: () => over, run: () => act("delete", shown) },
+        { id: "draft", show: "d", seqs: ["D"], group: qsTr("Wrap-up"), label: shown.wrapup ? qsTr("Draft the wrap-up again") : qsTr("Draft the wrap-up"),
+          enabled: () => over && (shown.lines || 0) > 0 && stage !== "drafting", run: () => act("draft", shown) },
+        { id: "finish", show: "a", seqs: ["A"], group: qsTr("Wrap-up"), label: qsTr("Do it all: Notion and the email draft"),
+          enabled: () => over && shown.wrapup === "ready" && stage !== "sent" && stage !== "sending", run: () => act("finish", shown) },
+        { id: "send", show: "s", seqs: ["S"], group: qsTr("Wrap-up"), label: qsTr("Send to Notion"),
+          enabled: () => hasNotes && stage !== "sent" && stage !== "sending", run: () => act("send", shown) },
+        { id: "email", show: "w", seqs: ["W"], group: qsTr("Wrap-up"), label: qsTr("Write the follow-up email"),
+          enabled: () => over && shown.wrapup === "ready", run: () => act("email", shown) },
+        { id: "notion", show: "o", seqs: ["O"], group: qsTr("Wrap-up"), label: qsTr("Open in Notion"),
+          enabled: () => stage === "sent", run: () => act("notion", shown) },
+        { id: "copyNotes", show: "c", seqs: ["C"], group: qsTr("Wrap-up"), label: qsTr("Copy the wrap-up as Markdown"),
+          enabled: () => hasNotes, run: () => act("copyNotes", shown) },
+        { id: "copyTranscript", show: "C", seqs: ["Shift+C"], group: qsTr("Wrap-up"), label: qsTr("Copy the transcript"),
+          enabled: () => (shown.lines || 0) > 0, run: () => act("copyTranscript", shown) },
+        { id: "skip", show: "x", seqs: ["X"], group: qsTr("Wrap-up"), label: shown.skipped ? qsTr("Needs a wrap-up after all") : qsTr("No wrap-up needed"),
+          enabled: () => over && stage !== "sent", run: () => act("skip", shown) },
+        { id: "revert", show: "", seqs: [], group: qsTr("Wrap-up"), label: qsTr("Go back to Opus's draft"),
+          enabled: () => over && !!shown.edited && stage !== "sent", run: () => act("revert", shown) },
+        { id: "ask", show: ">", seqs: [">"], group: qsTr("Agent"), label: qsTr("Ask the agent about this meeting"),
+          enabled: () => hasMeeting, run: askAgent },
+        { id: "wide", show: "", seqs: [], group: qsTr("Agent"), label: qsTr("Ask across all meetings"),
+          run: () => { agent.wide = true; askAgent() } },
+        { id: "allow", show: "y", seqs: ["Y"], group: qsTr("Agent"), label: qsTr("Allow what the agent asks to run"),
+          enabled: () => agent.approvals.length > 0, run: () => agent.decide(agent.approvals[0].id, "once") },
+        { id: "deny", show: "n", seqs: ["N"], group: qsTr("Agent"), label: qsTr("Deny what the agent asks to run"),
+          enabled: () => agent.approvals.length > 0, run: () => agent.decide(agent.approvals[0].id, "deny") },
+        { id: "forget", show: "ctrl+shift+k", seqs: ["Ctrl+Shift+K"], always: true, group: qsTr("Agent"), label: qsTr("New chat with the agent"),
+          enabled: () => !agent.running, run: () => agent.forget() },
+
+        { id: "down", show: "j", seqs: ["J"], group: qsTr("Move"), label: qsTr("Next meeting"), run: () => meetingList.step(1) },
+        { id: "up", show: "k", seqs: ["K"], group: qsTr("Move"), label: qsTr("Previous meeting"), run: () => meetingList.step(-1) },
+        { id: "list", show: "\\", seqs: ["\\"], group: qsTr("Move"), label: qsTr("Show / hide the meetings"), run: toggleList },
+        { id: "back", show: "esc", seqs: [], group: qsTr("Move"), label: qsTr("Back: clear the search, stop the agent, go home"), run: back },
+
+        { id: "home", show: "g h", seqs: ["G,H"], group: qsTr("Go to"), label: qsTr("Home"), run: goHome },
+        { id: "meetings", show: "g m", seqs: ["G,M"], group: qsTr("Go to"), label: qsTr("The meeting on screen"), run: openSelected },
+        { id: "current", show: "g n", seqs: ["G,N"], group: qsTr("Go to"), label: qsTr("The meeting that's on now"),
+          enabled: () => onAir, run: () => openFrom(engine.current, -1) },
+        { id: "followups", show: "g f", seqs: ["G,F"], group: qsTr("Go to"), label: qsTr("Follow-ups"), run: () => showScope("followups") },
+
+        { id: "search", show: "/", seqs: ["/"], group: qsTr("Find"), label: qsTr("Search what was said, in every meeting"), run: focusSearch },
+        { id: "palette", show: ";", seqs: [";"], group: qsTr("Find"), label: qsTr("Commands"), run: () => palette.open(false) },
+
+        { id: "shade", show: "b", seqs: ["B"], group: qsTr("App"), label: qsTr("Roll up to a small bar"), run: () => setShaded(!shaded) },
+        { id: "help", show: "?", seqs: ["?"], group: qsTr("App"), label: qsTr("Keys"), run: showKeys },
+        { id: "quit", show: "q", seqs: ["Q"], group: qsTr("App"), label: qsTr("Quit"), run: quit }
+    ]
+    function action(id) { return actions.find(a => a.id === id) }
+    // What the palette adds when typed for: the settings, and every meeting
+    // (the six newest show before anything is typed).
+    function paletteMore() {
+        const out = []
+        const st = engine.settings
+        const flip = (key, label) => out.push({ group: qsTr("Settings"), show: "",
+            label: (st[key] !== false ? qsTr("Turn off: %1") : qsTr("Turn on: %1")).arg(label),
+            run: () => engine.setSetting(key, !(st[key] !== false)) })
+        flip("watch_calls", qsTr("record calls by itself"))
+        flip("calendar_offers", qsTr("offers before calendar meetings"))
+        flip("live_takeaways", qsTr("live takeaways"))
+        flip("stop_on_silence", qsTr("end after a long silence"))
+        out.push({ group: qsTr("Settings"), show: "",
+                   label: st.speaker_names === true ? qsTr("Turn off: tell their voices apart") : qsTr("Turn on: tell their voices apart"),
+                   run: () => engine.setSetting("speaker_names", st.speaker_names !== true) })
+        engine.meetings.slice().sort((a, b) => (b.started || 0) - (a.started || 0))
+            .forEach((x, i) => out.push({ group: qsTr("Meetings"), show: "", label: x.title || qsTr("Untitled"),
+                                          detail: Sidecar.dayLabel(x) + "  ·  " + Sidecar.span(x), quiet: i >= 6,
+                                          run: () => openFrom(x.id, -1) }))
+        return out
+    }
+
     header: Item {
         implicitHeight: win.shaded ? miniBar.implicitHeight : topBar.implicitHeight
         TopBar {
@@ -268,6 +400,8 @@ ApplicationWindow {
             visible: !win.shaded
             onToggleList: win.toggleList()
             onShade: win.setShaded(true)
+            onLeave: keyRoot.forceActiveFocus()
+            onMoveRequested: delta => meetingList.step(delta)
         }
         MiniBar {
             id: miniBar
@@ -278,43 +412,75 @@ ApplicationWindow {
         }
     }
 
-    RowLayout {
+    Item {
+        id: keyRoot
         anchors.fill: parent
-        spacing: 0
         visible: !win.shaded
+        focus: true
 
-        FollowupsPane {
-            visible: win.view === "followups"
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            now: win.now
-            onOpenMeeting: (id, at) => win.openFrom(id, at)
+        // Symbols typed with Shift (> ? ;) arrive as Shift plus the symbol,
+        // and whether a Shortcut matches that depends on the keyboard
+        // layout. A key no Shortcut took lands here: run the command by the
+        // character typed.
+        Keys.onPressed: event => {
+            if (win.typing || win.overlayOpen) return
+            if (event.text.length !== 1) return
+            const a = win.actions.find(x => x.show === event.text && !/[a-z0-9]/i.test(x.show))
+            if (a && (!a.enabled || a.enabled())) { a.run(); event.accepted = true }
         }
-        MeetingList {
-            id: meetingList
-            visible: win.listShown && win.view === "meetings"
-            Layout.preferredWidth: 300
-            Layout.fillWidth: !center.visible
-            Layout.fillHeight: true
-            filter: topBar.search.text
-            now: win.now
-        }
-        // The call: what meeting it is and its switches, then its tabs.
-        ColumnLayout {
-            id: center
-            visible: win.view === "meetings" && !(win.searching && win.width < 1100)
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.minimumWidth: 360
-            spacing: 0
-            CallBanner { Layout.fillWidth: true }
-            MeetingHeader { id: meetingHeader; Layout.fillWidth: true; now: win.now }
-            MeetingPane {
-                id: meetingPane
-                objectName: "meetingPane"
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+
+        SplitView {
+            anchors.fill: parent
+            orientation: Qt.Horizontal
+            handle: Rectangle {
+                implicitWidth: 1
+                color: SplitHandle.hovered || SplitHandle.pressed ? theme.accent : ui.line
+            }
+
+            MeetingList {
+                id: meetingList
+                visible: win.listShown && win.view !== "followups"
+                SplitView.preferredWidth: 380
+                SplitView.minimumWidth: 280
+                filter: topBar.search.text
                 now: win.now
+            }
+
+            // Home, the meeting on screen, or the follow-ups.
+            Item {
+                SplitView.fillWidth: true
+                SplitView.minimumWidth: 360
+                visible: win.view === "followups" || !(win.searching && !win.listFits)
+                clip: true
+                Home {
+                    id: home
+                    objectName: "home"
+                    anchors.fill: parent
+                    visible: win.view === "home"
+                    now: win.now
+                }
+                FollowupsPane {
+                    anchors.fill: parent
+                    visible: win.view === "followups"
+                    now: win.now
+                    onOpenMeeting: (id, at) => win.openFrom(id, at)
+                }
+                // The call: what meeting it is and its switches, then its tabs.
+                ColumnLayout {
+                    id: center
+                    anchors.fill: parent
+                    visible: win.view === "meetings"
+                    spacing: 0
+                    CallBanner { Layout.fillWidth: true }
+                    MeetingHeader { id: meetingHeader; Layout.fillWidth: true; now: win.now }
+                    MeetingPane {
+                        id: meetingPane
+                        objectName: "meetingPane"
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        now: win.now
+                    }
+                }
             }
         }
     }
@@ -343,8 +509,6 @@ ApplicationWindow {
         }
     }
 
-    KeysOverlay { id: keys; objectName: "keys" }
-    CommandPalette { id: palette; objectName: "palette" }
     Toast {
         id: toast
         visible: opacity > 0 && !win.shaded
@@ -352,56 +516,28 @@ ApplicationWindow {
         onShown: message => { miniBar.notice = message; noticeClear.restart() }
     }
     Timer { id: noticeClear; interval: 1800; onTriggered: miniBar.notice = "" }
-    SendSheet { id: sendSheet; objectName: "sendSheet"; anchors.fill: parent; z: 40 }
-    EmailSheet { id: emailSheet; objectName: "emailSheet"; anchors.fill: parent; z: 41 }
-    ConfirmOverlay { id: confirm; anchors.fill: parent; z: 45 }
+    // Over the whole window, the bar too, as in every Aloi app.
+    SendSheet { id: sendSheet; objectName: "sendSheet"; parent: Overlay.overlay; anchors.fill: parent; z: 40 }
+    EmailSheet { id: emailSheet; objectName: "emailSheet"; parent: Overlay.overlay; anchors.fill: parent; z: 41 }
+    CommandPalette { id: palette; objectName: "palette"; parent: Overlay.overlay; anchors.fill: parent; z: 44; actions: win.actions; more: win.paletteMore }
+    ConfirmOverlay { id: confirm; parent: Overlay.overlay; anchors.fill: parent; z: 45 }
 
-    Shortcut { sequence: "Space"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.connected; onActivated: engine.toggleListening() }
-    Shortcut { sequence: "/"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { win.showAgent(); meetingPane.agentPane.input.forceActiveFocus() } }
-    Shortcut { sequence: "Ctrl+F"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: { win.listHidden = false; topBar.search.forceActiveFocus() } }
-    Shortcut { sequences: ["Ctrl+K", "Ctrl+P"]; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: palette.show() }
-    Shortcut { sequence: "?"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: keys.open() }
-    Shortcut { sequence: "End"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { win.view = "meetings"; meetingPane.tab = "transcript"; meetingPane.transcriptPane.toLive() } }
-    Shortcut { sequence: "J"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingList.step(1) }
-    Shortcut { sequence: "K"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingList.step(-1) }
-    Shortcut { sequence: "G"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: engine.select(engine.current) }
-    Shortcut { sequence: "B"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.setShaded(!win.shaded) }
-    Shortcut { sequence: "\\"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.toggleList() }
-    Shortcut { sequence: "R"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.rename() }
-    Shortcut { sequence: "E"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: win.act("end", engine.meetingById(engine.current)) }
-    Shortcut { sequence: "F"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.view = win.view === "followups" ? "meetings" : "followups" }
-    Shortcut { sequence: "T"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: { win.view = "meetings"; meetingPane.toggleTab() } }
-    Shortcut { sequence: "D"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("draft", win.shown) }
-    Shortcut { sequence: "S"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.act("send", win.shown) }
-    Shortcut { sequence: "A"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended" && win.shown.wrapup === "ready" && win.stage !== "sent"; onActivated: win.act("finish", win.shown) }
-    Shortcut { sequence: "W"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("email", win.shown) }
-    Shortcut { sequence: "O"; context: Qt.ApplicationShortcut; enabled: win.idle && win.stage === "sent"; onActivated: win.act("notion", win.shown) }
-    Shortcut { sequence: "C"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("copyNotes", win.shown) }
-    Shortcut { sequence: "Shift+C"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.act("copyTranscript", win.shown) }
-    Shortcut { sequence: "X"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended" && win.stage !== "sent"; onActivated: win.act("skip", win.shown) }
-    Shortcut { sequence: "Del"; context: Qt.ApplicationShortcut; enabled: win.idle && win.shown.state === "ended"; onActivated: win.act("delete", win.shown) }
-    Shortcut { sequences: ["Menu", "Shift+F10"]; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.openMenu() }
-    Shortcut { sequence: "Ctrl+N"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: win.newMeeting() }
-    Shortcut { sequence: "Ctrl+Shift+K"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen && !agent.running; onActivated: agent.forget() }
-    Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.running; onActivated: agent.stop() }
-    Shortcut { sequence: "Y"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.approvals.length > 0; onActivated: agent.decide(agent.approvals[0].id, "once") }
-    Shortcut { sequence: "N"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.approvals.length > 0; onActivated: agent.decide(agent.approvals[0].id, "deny") }
-    Shortcut { sequence: "N"; context: Qt.ApplicationShortcut; enabled: win.idle && agent.approvals.length === 0 && win.shown.id !== undefined; onActivated: meetingPane.note() }
-    Shortcut { sequence: "M"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: win.markNow() }
-    Shortcut {
-        sequence: "Q"
-        context: Qt.ApplicationShortcut
-        enabled: win.idle
-        onActivated: {
-            if (!engine.listening) { Qt.quit(); return }
-            confirm.ask({
-                title: qsTr("Stop listening and quit?"),
-                detail: qsTr("The meeting is paused, not ended: open Sidecar again and Space carries on with it."),
-                confirm: qsTr("Quit"),
-                run: () => Qt.quit()
-            })
+    // The single keys stay out of the way while you type or an overlay is up.
+    Repeater {
+        model: win.actions.filter(a => a.seqs.length > 0)
+        Item {
+            required property var modelData
+            Shortcut {
+                sequences: modelData.seqs
+                context: Qt.ApplicationShortcut
+                enabled: (modelData.always ? !win.overlayOpen : win.idle) && (!modelData.enabled || modelData.enabled())
+                onActivated: modelData.run()
+            }
         }
     }
+    Shortcut { sequence: "Ctrl+K"; context: Qt.ApplicationShortcut; enabled: !win.overlayOpen; onActivated: win.focusSearch() }
+    Shortcut { sequence: "Esc"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.back() }
+    // 1 to 4 ask the agent's suggestions.
     Repeater {
         model: 4
         delegate: Item {
@@ -409,7 +545,7 @@ ApplicationWindow {
             Shortcut {
                 sequence: String(index + 1)
                 context: Qt.ApplicationShortcut
-                enabled: win.idle && !agent.running
+                enabled: win.idle && !agent.running && win.hasMeeting
                 onActivated: { win.showAgent(); meetingPane.agentPane.ask(meetingPane.agentPane.chips[index]) }
             }
         }

@@ -4,6 +4,8 @@ A live transcript of the meeting you're in, and an agent beside it that you
 can ask about the call while it's going on, with every skill you have in
 Claude Code.
 
+![Home: the meeting that's on, and what's waiting on you](docs/home-1440x900.png)
+
 ![Sidecar during a call, answering a question](docs/answer-1440x900.png)
 
 ![A meeting's wrap-up, ready to send to Notion](docs/review-1440x900.png)
@@ -20,10 +22,15 @@ Claude Code.
   gets the lines said since your last question and can use your skills
   (Vaspian One, Silhouette, mail and calendar, Notion, Telescope…).
 - **Every meeting has edges.** It starts when you listen (Space) or start
-  one (Ctrl+N), pauses with Space, and ends with E. Nothing is merged into a
+  one (ctrl+n), pauses with Space, and ends with e. Nothing is merged into a
   meeting by time. Each is a folder in `~/.local/share/aloi-sidecar/meetings/`
   (`meta.json` and `transcript.jsonl`); a meeting nobody spoke in leaves
   nothing behind.
+- **Opens on Home**, as every Aloi app opens on what's waiting on you: the
+  meeting that's on, with its switches; the meetings waiting on a wrap-up,
+  oldest first; what you said you'd do; and what went to Notion lately.
+  `g h` comes back to it. Sidecar is built from Aloi UI (`~/Work/aloi-ui`),
+  so its bar, buttons, palette and keys are the same as Tix's and ntfy's.
 - **Go back to any meeting.** The list on the left has every meeting, live
   first, then today, yesterday, this week and earlier. Open one to read it
   and ask about it: each meeting has its own conversation with the agent,
@@ -68,9 +75,9 @@ Claude Code.
   Stop, and what's left to wrap up.
 - **Takeaways while you talk.** Every couple of minutes Haiku keeps four
   short lists in the agent panel: asked and not answered, what you said
-  you'd do, decided, and open. `M` marks a moment, `N` types a note; both
+  you'd do, decided, and open. `m` marks a moment, `n` types a note; both
   go into the transcript and weigh on the wrap-up.
-- **Follow-ups (`F`)** gathers what you committed to in every meeting,
+- **Follow-ups (`g f`)** gathers what you committed to in every meeting,
   oldest first. Ticking one off ticks it on the meeting's Notion page too,
   and ticks made in Notion come back.
 - **No listening to dead air.** After five minutes with nothing said, a
@@ -87,8 +94,8 @@ The agent runs like Aloi Tix's: `claude -p` in
 - Read, Grep, Glob, Skill, WebSearch, WebFetch and plain reading commands
   run on their own. It has no Edit or Write.
 - Anything else it wants to run (a skill's script, `curl`, `python3`) waits
-  in the agent panel with the exact command: **Allow** (`Y`), **Always for**
-  that skill, or **Deny** (`N`). Skills you always allow are kept in
+  in the agent panel with the exact command: **Allow** (`y`), **Always for**
+  that skill, or **Deny** (`n`). Skills you always allow are kept in
   `~/.local/state/aloi-sidecar/agent-allow.json`.
 - What people say on the call is never taken as an instruction; only your
   question is. It writes emails and notes in its answer for you to use, and
@@ -98,41 +105,47 @@ The agent runs like Aloi Tix's: `claude -p` in
 
 ## Keys
 
-`?` lists them all; `Ctrl+K` finds any action or meeting by typing.
+The same keys as every Aloi app: `?` lists them all, `;` runs any command or
+opens any meeting by typing, `/` searches, `\` shows or hides the list, `esc`
+goes back. A capital is Shift (`C` is Shift+C); `g h` is g, then h.
 
 | Key | Action |
 |-----|--------|
-| `Space` | Listen / pause (starts a meeting if none is on) |
-| `E` | End the meeting (Opus drafts its wrap-up) |
-| `Ctrl+N` | Start a new meeting |
-| `M` | Mark this moment as one that matters (highlighted in the wrap-up) |
-| `N` | Type a note into the transcript |
-| `R` | Rename the meeting on screen |
-| `T` | Next tab: agent, transcript, notes |
-| `F` | Follow-ups across every meeting / back to meetings |
-| `D` | Draft the wrap-up (again) |
-| `A` | Do it all: file in Notion and save the follow-up email to Drafts |
-| `S` | Send to Notion |
-| `O` | Open it in Notion |
-| `W` | Write the follow-up email, saved to Outlook Drafts (never sent) |
-| `C` / `Shift+C` | Copy the wrap-up as Markdown / the transcript |
-| `X` | No wrap-up needed (or needed after all) |
-| `Menu` / `Shift+F10` | Everything for the meeting (or right-click it) |
-| `Del` | Delete the meeting (to the trash folder) |
-| `J` / `K` | Next / previous meeting |
-| `G` | Go to the meeting that's on now |
-| `\` | Show / hide the meetings list |
-| `Ctrl+F` | Search what was said, in every meeting (Enter opens the first hit) |
-| `/` | Ask about the meeting on screen |
-| Right-click → Merge | Two meetings that were one call become one (the earlier keeps its title) |
+| `space` | Listen / pause (starts a meeting if none is on) |
+| `e` | End the meeting that's on (Opus drafts its wrap-up) |
+| `m` | Mark this moment as one that matters (highlighted in the wrap-up) |
+| `ctrl+n` | Start a new meeting |
+| `n` | Type a note into the transcript |
+| `r` | Rename the meeting on screen |
+| `t` | Next tab: agent, transcript, notes |
+| `end` | Back to the live end of the transcript |
+| `.` / `menu` | Everything for the meeting (or right-click it) |
+| `del` | Delete the meeting (to the trash folder) |
+| `d` | Draft the wrap-up (again) |
+| `a` | Do it all: file in Notion and save the follow-up email to Drafts |
+| `s` | Send to Notion |
+| `o` | Open it in Notion |
+| `w` | Write the follow-up email, saved to Outlook Drafts (never sent) |
+| `c` / `C` | Copy the wrap-up as Markdown / the transcript |
+| `x` | No wrap-up needed (or needed after all) |
+| `>` | Ask about the meeting on screen |
 | `1`–`4` | Ask a suggested question |
-| `Ctrl+A` | (in the ask box) The next question goes across all meetings |
-| `Esc` | Stop the agent, leave the ask box |
-| `Y` / `N` | Allow / deny what the agent wants to run |
-| `End` | Back to the live end of the transcript |
-| `Ctrl+Shift+K` | New chat with the agent |
-| `Ctrl+K` | Do anything, go to any meeting |
-| `Q` | Quit (pauses listening) |
+| `ctrl+a` | (in the ask box) The next question goes across all meetings |
+| `y` / `n` | Allow / deny what the agent wants to run |
+| `ctrl+shift+k` | New chat with the agent |
+| `j` / `k` | Next / previous meeting |
+| `g h` | Home: what's on, and what's waiting on you |
+| `g m` | The meeting on screen |
+| `g n` | The meeting that's on now |
+| `g f` | Follow-ups across every meeting |
+| `/` or `ctrl+k` | Search what was said, in every meeting (Enter opens the first hit) |
+| `;` | Do anything, go to any meeting |
+| `\` | Show / hide the meetings list |
+| `esc` | Clear the search, stop the agent, then back home |
+| `b` | Roll up to a small bar on every workspace, and back |
+| `?` | Every key |
+| `q` | Quit (pauses listening) |
+| Right-click → Merge | Two meetings that were one call become one (the earlier keeps its title) |
 
 `aloi-sidecar --ask` brings Sidecar forward with the cursor in the ask box
 (for a Hyprland binding); `--toggle` turns listening on or off;

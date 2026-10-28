@@ -147,7 +147,7 @@ Rectangle {
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
-                ActionButton { text: qsTr("Cancel"); keys: "esc"; onClicked: root.close() }
+                KeyButton { text: qsTr("Cancel"); keys: "esc"; onClicked: root.close() }
             }
         }
     }

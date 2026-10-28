@@ -40,6 +40,26 @@ Rectangle {
             anchors.topMargin: 14
             spacing: 6
 
+            // Where it sits, as in every Aloi app: Home, then its group.
+            Row {
+                spacing: 8
+                Label {
+                    text: qsTr("Home")
+                    color: crumbHover.hovered ? ui.text : ui.faint
+                    font.pixelSize: 11
+                    HoverHandler { id: crumbHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: win.goHome() }
+                }
+                Label { text: "›"; color: ui.faint; font.pixelSize: 11 }
+                Label {
+                    text: head.isCurrent ? qsTr("On now")
+                        : Sidecar.needsWrapup(head.m, head.now) ? qsTr("Needs wrap-up")
+                        : ({ today: qsTr("Today"), yesterday: qsTr("Yesterday") })[Sidecar.group(head.m, head.now)] || Sidecar.dayLabel(head.m)
+                    color: ui.faint
+                    font.pixelSize: 11
+                }
+            }
+
             GridLayout {
                 Layout.fillWidth: true
                 columns: head.narrow ? 1 : 2
@@ -54,7 +74,7 @@ Rectangle {
                         width: parent.width
                         text: head.m.title || ""
                         color: ui.text
-                        font.pixelSize: 21
+                        font.pixelSize: 26
                         font.bold: true
                         elide: Text.ElideRight
                         HoverHandler { id: titleHover; cursorShape: Qt.IBeamCursor }
@@ -68,7 +88,7 @@ Rectangle {
                         visible: head.editing
                         width: parent.width
                         color: ui.text
-                        font.pixelSize: 21
+                        font.pixelSize: 26
                         font.bold: true
                         selectByMouse: true
                         selectionColor: ui.alpha(theme.accent, 0.4)
@@ -90,41 +110,41 @@ Rectangle {
                     }
                     Layout.fillWidth: head.narrow
                     Layout.preferredWidth: head.narrow ? -1 : needed
-                    ActionButton {
+                    KeyButton {
                         visible: head.isCurrent
                         primary: true
-                        implicitHeight: 30
+                        glyph: head.live ? "pause" : "mic"
                         text: head.live ? qsTr("Pause") : qsTr("Resume")
                         keys: "space"
                         onClicked: engine.toggleListening()
                     }
-                    ActionButton {
+                    KeyButton {
                         visible: head.isCurrent
-                        implicitHeight: 30
+                        glyph: "stop"
                         text: qsTr("End")
-                        keys: "E"
+                        keys: "e"
                         tip: qsTr("End the meeting and draft its wrap-up")
                         onClicked: win.act("end", head.m)
                     }
-                    ActionButton {
+                    KeyButton {
                         visible: head.isCurrent
-                        implicitHeight: 30
+                        glyph: "flag"
                         text: qsTr("Mark")
-                        keys: "M"
+                        keys: "m"
                         tip: qsTr("Flag this moment as one that matters")
                         onClicked: win.markNow()
                     }
-                    ActionButton {
-                        implicitHeight: 30
+                    KeyButton {
+                        glyph: "note"
                         text: qsTr("Note")
-                        keys: "N"
+                        keys: "n"
                         tip: qsTr("Type a line of your own into the transcript")
                         onClicked: meetingPane.note()
                     }
-                    ActionButton {
+                    KeyButton {
                         id: moreButton
-                        implicitHeight: 30
-                        menu: true
+                        glyph: "more"
+                        keys: "."
                         tip: qsTr("Everything for this meeting (right-click it in the list, too)")
                         onClicked: head.openMenu()
                     }

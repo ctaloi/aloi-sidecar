@@ -63,13 +63,13 @@ Rectangle {
                 Layout.fillHeight: true
                 tabs: {
                     const out = [
-                        { label: qsTr("Agent"), current: pane.tab === "agent", keys: "T", run: () => pane.tab = "agent",
+                        { label: qsTr("Agent"), current: pane.tab === "agent", keys: "t", run: () => pane.tab = "agent",
                           dot: agent.running || agent.approvals.length > 0 },
                         { label: pane.live ? qsTr("Live transcript") : qsTr("Transcript"), count: pane.isCurrent ? transcript.count : (pane.m.lines || 0),
-                          current: pane.tab === "transcript", keys: "T", run: () => pane.tab = "transcript" }
+                          current: pane.tab === "transcript", keys: "t", run: () => pane.tab = "transcript" }
                     ]
                     if (pane.hasNotes)
-                        out.push({ label: qsTr("Notes"), current: pane.tab === "notes", keys: "T", run: () => pane.tab = "notes",
+                        out.push({ label: qsTr("Notes"), current: pane.tab === "notes", keys: "t", run: () => pane.tab = "notes",
                                    dot: pane.stage === "drafting" || pane.stage === "ready" || pane.stage === "draftFailed" || pane.stage === "sendFailed" })
                     return out
                 }
@@ -78,7 +78,7 @@ Rectangle {
             // all of them for one question.
             Label {
                 visible: pane.tab === "agent"
-                text: (agent.wide ? "◎ " + qsTr("All meetings") : qsTr("This meeting")) + "  ▾"
+                text: (agent.wide ? qsTr("All meetings") : qsTr("This meeting")) + "  ▾"
                 color: agent.wide ? theme.accent : scopeHover.hovered ? ui.muted : ui.faint
                 font.pixelSize: 12
                 HoverHandler { id: scopeHover; cursorShape: Qt.PointingHandCursor }
@@ -88,7 +88,7 @@ Rectangle {
                 ToolTip.text: agent.wide ? qsTr("The next question searches every meeting (ctrl+A switches back)")
                                          : qsTr("Ask the next question across every meeting (ctrl+A)")
             }
-            ActionButton {
+            KeyButton {
                 visible: pane.tab === "agent" && agent.messages.length > 0
                 enabled: !agent.running
                 text: qsTr("New chat")

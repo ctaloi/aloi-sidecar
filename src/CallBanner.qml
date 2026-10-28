@@ -44,13 +44,14 @@ Rectangle {
             color: ui.text
             font.pixelSize: 13
         }
-        ActionButton {
+        KeyButton {
             implicitHeight: 30
-            text: banner.width < 520 ? "×" : qsTr("Dismiss")
+            glyph: banner.width < 520 ? "close" : ""
+            text: banner.width < 520 ? "" : qsTr("Dismiss")
             tip: banner.width < 520 ? qsTr("Dismiss") : ""
             onClicked: banner.dismissed = banner.call.since
         }
         // A new call is a new meeting, even if an earlier one is paused.
-        ActionButton { primary: true; implicitHeight: 30; text: qsTr("Record it"); onClicked: engine.startMeeting() }
+        KeyButton { primary: true; implicitHeight: 30; text: qsTr("Record it"); onClicked: engine.startMeeting() }
     }
 }

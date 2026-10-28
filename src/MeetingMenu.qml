@@ -26,50 +26,50 @@ SideMenu {
         keys: menu.isCurrent ? "space" : ""
         onTriggered: win.act("listen", menu.m)
     }
-    MenuRow { text: qsTr("End meeting…"); keys: "E"; visible: menu.isCurrent; onTriggered: win.act("end", menu.m) }
-    MenuRow { text: qsTr("Rename…"); keys: "R"; onTriggered: win.act("rename", menu.m) }
+    MenuRow { text: qsTr("End meeting…"); keys: "e"; visible: menu.isCurrent; onTriggered: win.act("end", menu.m) }
+    MenuRow { text: qsTr("Rename…"); keys: "r"; onTriggered: win.act("rename", menu.m) }
     MenuLine {}
     MenuRow {
         text: menu.stage === "drafting" ? qsTr("Drafting the wrap-up…")
             : (menu.m.wrapup ? qsTr("Draft the wrap-up again…") : qsTr("Draft the wrap-up"))
-        keys: "D"
+        keys: "d"
         visible: !menu.isCurrent
         enabled: menu.stage !== "drafting" && (menu.m.lines || 0) > 0
         onTriggered: win.act("draft", menu.m)
     }
     MenuRow {
         text: qsTr("Do it all: Notion and the email draft")
-        keys: "A"
+        keys: "a"
         visible: menu.stage !== "sent" && !menu.isCurrent
         enabled: menu.m.wrapup === "ready" && menu.stage !== "sending"
         onTriggered: win.act("finish", menu.m)
     }
     MenuRow {
         text: menu.stage === "sendFailed" ? qsTr("Try sending to Notion again") : qsTr("Send to Notion…")
-        keys: "S"
+        keys: "s"
         visible: menu.stage !== "sent" && !menu.isCurrent
         enabled: menu.hasNotes && menu.stage !== "sending"
         onTriggered: win.act("send", menu.m)
     }
     MenuRow {
         text: qsTr("Write the follow-up email…")
-        keys: "W"
+        keys: "w"
         visible: !menu.isCurrent
         enabled: menu.m.wrapup === "ready"
         onTriggered: win.act("email", menu.m)
     }
-    MenuRow { text: qsTr("Open in Notion"); keys: "O"; visible: menu.stage === "sent"; onTriggered: win.act("notion", menu.m) }
+    MenuRow { text: qsTr("Open in Notion"); keys: "o"; visible: menu.stage === "sent"; onTriggered: win.act("notion", menu.m) }
     MenuRow {
         text: qsTr("Go back to Opus's draft…")
         visible: !!menu.m.edited && menu.stage !== "sent"
         onTriggered: win.act("revert", menu.m)
     }
-    MenuRow { text: qsTr("Copy the wrap-up as Markdown"); keys: "C"; enabled: menu.hasNotes; visible: !menu.isCurrent; onTriggered: win.act("copyNotes", menu.m) }
-    MenuRow { text: qsTr("Copy the transcript"); keys: "shift+C"; enabled: (menu.m.lines || 0) > 0; onTriggered: win.act("copyTranscript", menu.m) }
+    MenuRow { text: qsTr("Copy the wrap-up as Markdown"); keys: "c"; enabled: menu.hasNotes; visible: !menu.isCurrent; onTriggered: win.act("copyNotes", menu.m) }
+    MenuRow { text: qsTr("Copy the transcript"); keys: "C"; enabled: (menu.m.lines || 0) > 0; onTriggered: win.act("copyTranscript", menu.m) }
     MenuLine {}
     MenuRow {
         text: menu.m.skipped ? qsTr("Needs a wrap-up after all") : qsTr("No wrap-up needed")
-        keys: "X"
+        keys: "x"
         visible: !menu.isCurrent && menu.stage !== "sent"
         onTriggered: win.act("skip", menu.m)
     }

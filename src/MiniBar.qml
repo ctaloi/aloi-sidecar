@@ -3,9 +3,9 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "sidecar.js" as Sidecar
 
-// The window rolled up to its bar (B, or ▴ in the top bar): whether
+// The window rolled up to its bar (b, or the roll-up in the top bar): whether
 // it's listening and for how long, and the words going by, pinned on every
-// workspace. B or ▾ rolls it back down.
+// workspace. b or the roll-down rolls it back down.
 Rectangle {
     id: bar
     implicitHeight: 40
@@ -123,10 +123,11 @@ Rectangle {
             }
         }
 
-        ActionButton {
-            implicitHeight: 26
-            text: "▾"
-            tip: qsTr("Roll back down (B)")
+        KeyButton {
+            implicitHeight: 28
+            glyph: "rolldown"
+            tip: qsTr("Roll back down")
+            keys: "b"
             onClicked: bar.unshade()
         }
     }

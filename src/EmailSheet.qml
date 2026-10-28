@@ -177,17 +177,17 @@ Rectangle {
                     color: ui.faint
                     font.pixelSize: 11
                 }
-                ActionButton {
+                KeyButton {
                     text: qsTr("Write again")
                     enabled: root.state !== "writing" && root.state !== "saving"
                     onClicked: engine.writeEmail(root.meeting.id)
                 }
-                ActionButton {
+                KeyButton {
                     text: qsTr("Copy")
                     enabled: bodyField.text !== ""
                     onClicked: { engine.copyToClipboard(subjectField.text + "\n\n" + bodyField.text); toast.show(qsTr("Email copied")) }
                 }
-                ActionButton {
+                KeyButton {
                     primary: true
                     busy: root.state === "saving"
                     enabled: (root.state === "ready" || root.state === "saved") && bodyField.text !== ""

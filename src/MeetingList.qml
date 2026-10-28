@@ -57,7 +57,7 @@ Rectangle {
     function step(delta) {
         const i = order.indexOf(engine.selected)
         const next = order[Math.max(0, Math.min(order.length - 1, (i < 0 ? 0 : i + delta)))]
-        if (next) engine.select(next)
+        if (next) win.openFrom(next, -1)
     }
 
     Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: ui.line }
@@ -79,7 +79,7 @@ Rectangle {
             required property int index
             readonly property bool header: modelData.header
             readonly property var m: modelData.m || ({})
-            readonly property bool current: !header && m.id === engine.selected
+            readonly property bool current: !header && m.id === engine.selected && win.view === "meetings"
             readonly property bool live: !header && m.state !== "ended"
             readonly property var hits: modelData.hits || []
             width: list.width
@@ -117,7 +117,7 @@ Rectangle {
                     color: theme.accent
                 }
                 HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: engine.select(row.m.id) }
+                TapHandler { onTapped: win.openFrom(row.m.id, -1) }
                 TapHandler {
                     acceptedButtons: Qt.RightButton
                     // The row comes on screen first, so the menu's keys act on it too.
