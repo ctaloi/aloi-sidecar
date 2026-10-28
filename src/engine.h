@@ -15,6 +15,8 @@ class QNetworkReply;
 class Transcript : public QAbstractListModel {
     Q_OBJECT
     Q_PROPERTY(int count READ count NOTIFY countChanged)
+    // The latest line ({speaker, who, text}), for the shaded window's ticker.
+    Q_PROPERTY(QVariantMap last READ last NOTIFY countChanged)
 
 public:
     enum Role { IdRole = Qt::UserRole + 1, SpeakerRole, TextRole, TimeRole, StartRole, MineRole, RunStartRole, VoiceRole, WhoRole };
@@ -42,6 +44,12 @@ public:
     // The lines after id, one per row as "[time] speaker: text", for the agent.
     QString textAfter(int id) const;
     int lastId() const { return m_lines.isEmpty() ? -1 : m_lines.last().id; }
+    QVariantMap last() const {
+        if (m_lines.isEmpty())
+            return {};
+        const auto &l = m_lines.last();
+        return {{"speaker", l.speaker}, {"who", who(l)}, {"text", l.text}};
+    }
     // When line id was said, and its row, for jumping to it.
     Q_INVOKABLE double startOf(int id) const;
     Q_INVOKABLE int rowOf(int id) const;

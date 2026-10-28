@@ -6,7 +6,8 @@ import QtQuick.Controls
 Rectangle {
     id: toast
     property string text
-    function show(message) { text = message; opacity = 1; hide.restart() }
+    signal shown(string message)
+    function show(message) { text = message; opacity = 1; hide.restart(); shown(message) }
 
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.bottom: parent.bottom
@@ -17,7 +18,6 @@ Rectangle {
     color: ui.raised
     border.color: ui.line
     opacity: 0
-    visible: opacity > 0
     z: 50
     Behavior on opacity { NumberAnimation { duration: 160 } }
     Row {

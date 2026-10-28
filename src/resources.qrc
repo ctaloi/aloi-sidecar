@@ -32,5 +32,6 @@
         <file>UnderlineTabs.qml</file>
         <file>StageChip.qml</file>
         <file>CallBanner.qml</file>
+        <file>MiniBar.qml</file>
     </qresource>
 </RCC>

@@ -22,6 +22,10 @@
 static int warnings = 0;
 
 static void handler(QtMsgType type, const QMessageLogContext &, const QString &message) {
+    // The offscreen platform can't take a minimum size, which rolling the
+    // window up changes; that's the platform, not the window.
+    if (message.contains("propagateSizeHints"))
+        return;
     if (type != QtDebugMsg && type != QtInfoMsg) {
         ++warnings;
         std::fprintf(stderr, "%s\n", qPrintable(message));
@@ -89,6 +93,16 @@ int main(int argc, char *argv[]) {
     wait(800);
     QDir().mkpath(out);
     window->grabWindow().save(out + "/listening-" + size + ".png");
+
+    // Rolled up to its bar; offscreen there's no Hyprland to size it, so
+    // the harness does.
+    QMetaObject::invokeMethod(window, "setShaded", Q_ARG(QVariant, true));
+    window->resize(560, 40);
+    wait(400);
+    window->grabWindow().save(out + "/shaded-" + size + ".png");
+    QMetaObject::invokeMethod(window, "setShaded", Q_ARG(QVariant, false));
+    window->resize(wh[0].toInt(), wh[1].toInt());
+    wait(300);
 
     if (approval) {
         agent.ask("Run exactly `curl -sI https://example.com` and tell me the HTTP status line, nothing else.");

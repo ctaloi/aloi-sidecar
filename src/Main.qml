@@ -13,8 +13,10 @@ ApplicationWindow {
     id: win
     width: 1440
     height: 900
-    minimumWidth: 720
-    minimumHeight: 480
+    // Rolled up to the bar, the window lets the compositor make it that
+    // small; Qt hands Hyprland its minimum size, and Hyprland keeps to it.
+    minimumWidth: shaded ? 320 : 720
+    minimumHeight: shaded ? miniBar.implicitHeight : 480
     visible: true
     title: {
         const t = engine.selectedMeeting.title
@@ -61,8 +63,33 @@ ApplicationWindow {
     // take the meeting's place until one is picked.
     readonly property bool searching: topBar.search.text.trim().length >= 2
     readonly property bool listShown: !listHidden && (width >= 1100 || searching)
+    // Rolled up to its bar like a classic Mac OS window shade (B, or ▴),
+    // pinned over every workspace, still listening.
+    property bool shaded: false
+    function setShaded(on) {
+        if (on === shaded) return
+        if (on) {
+            listDrawer.close()
+            if (activeFocusItem) activeFocusItem.focus = false
+            shaded = true
+            // Qt commits the smaller minimum size with the next frame; only
+            // then will Hyprland shrink the window that far.
+            shadeLater.restart()
+        } else {
+            shade.unshade()
+        }
+    }
+    Timer { id: shadeLater; interval: 60; onTriggered: shade.shade(560, miniBar.implicitHeight) }
+    Connections {
+        target: shade
+        // The full window comes back once Hyprland has given it its size.
+        function onDone(on) { if (!on) win.shaded = false }
+    }
+    // Anything that needs the window, a question or a confirm, rolls it down.
+    onOverlayOpenChanged: if (overlayOpen) setShaded(false)
+
     // The meeting's tabs: the agent, the transcript, the notes.
-    function showAgent() { view = "meetings"; meetingPane.tab = "agent" }
+    function showAgent() { setShaded(false); view = "meetings"; meetingPane.tab = "agent" }
     // Something waiting for an Allow can't wait behind another tab.
     Connections {
         target: agent
@@ -215,6 +242,7 @@ ApplicationWindow {
     Connections {
         target: instance
         function onOpenRequested(action) {
+            win.setShaded(false)
             win.raise()
             win.requestActivate()
             if (action === "ask") { win.showAgent(); meetingPane.agentPane.input.forceActiveFocus() }
@@ -232,14 +260,28 @@ ApplicationWindow {
         function onAccepted() { win.view = "meetings"; meetingList.openFirst() }
     }
 
-    header: TopBar {
-        id: topBar
-        onToggleList: win.toggleList()
+    header: Item {
+        implicitHeight: win.shaded ? miniBar.implicitHeight : topBar.implicitHeight
+        TopBar {
+            id: topBar
+            anchors.fill: parent
+            visible: !win.shaded
+            onToggleList: win.toggleList()
+            onShade: win.setShaded(true)
+        }
+        MiniBar {
+            id: miniBar
+            anchors.fill: parent
+            visible: win.shaded
+            now: win.now
+            onUnshade: win.setShaded(false)
+        }
     }
 
     RowLayout {
         anchors.fill: parent
         spacing: 0
+        visible: !win.shaded
 
         FollowupsPane {
             visible: win.view === "followups"
@@ -285,7 +327,7 @@ ApplicationWindow {
         width: Math.min(340, win.width * 0.85)
         height: win.height - topBar.height
         modal: true
-        interactive: !win.listFits
+        interactive: !win.listFits && !win.shaded
         padding: 0
         background: Rectangle { color: ui.window }
         Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.45) }
@@ -303,7 +345,13 @@ ApplicationWindow {
 
     KeysOverlay { id: keys; objectName: "keys" }
     CommandPalette { id: palette; objectName: "palette" }
-    Toast { id: toast }
+    Toast {
+        id: toast
+        visible: opacity > 0 && !win.shaded
+        // Rolled up, the bar says it instead.
+        onShown: message => { miniBar.notice = message; noticeClear.restart() }
+    }
+    Timer { id: noticeClear; interval: 1800; onTriggered: miniBar.notice = "" }
     SendSheet { id: sendSheet; objectName: "sendSheet"; anchors.fill: parent; z: 40 }
     EmailSheet { id: emailSheet; objectName: "emailSheet"; anchors.fill: parent; z: 41 }
     ConfirmOverlay { id: confirm; anchors.fill: parent; z: 45 }
@@ -317,6 +365,7 @@ ApplicationWindow {
     Shortcut { sequence: "J"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingList.step(1) }
     Shortcut { sequence: "K"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingList.step(-1) }
     Shortcut { sequence: "G"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: engine.select(engine.current) }
+    Shortcut { sequence: "B"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.setShaded(!win.shaded) }
     Shortcut { sequence: "\\"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: win.toggleList() }
     Shortcut { sequence: "R"; context: Qt.ApplicationShortcut; enabled: win.idle; onActivated: meetingPane.rename() }
     Shortcut { sequence: "E"; context: Qt.ApplicationShortcut; enabled: win.idle && engine.current !== ""; onActivated: win.act("end", engine.meetingById(engine.current)) }

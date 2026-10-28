@@ -147,6 +147,7 @@ Popup {
         add("app", qsTr("New chat with the agent"), "ctrl+shift+K", () => agent.forget())
         add("app", qsTr("Search what was said, in every meeting"), "ctrl+F", () => { win.listHidden = false; topBar.search.forceActiveFocus() })
         add("app", qsTr("Every key"), "?", () => keys.open())
+        add("app", qsTr("Roll up to a small bar"), "B", () => win.setShaded(true))
 
         const s = engine.settings
         const flip = (key, onText, offText) => add("setting", s[key] !== false ? offText : onText, "",

@@ -10,6 +10,7 @@
 #include "agent.h"
 #include "engine.h"
 #include "instance.h"
+#include "shade.h"
 #include "theme.h"
 
 void App::prepare() {
@@ -28,6 +29,7 @@ bool App::load(QQmlApplicationEngine &qml, Theme &theme, Engine &engine, Agent &
     context->setContextProperty("transcript", engine.transcript());
     context->setContextProperty("agent", &agent);
     context->setContextProperty("instance", instance);
+    context->setContextProperty("shade", new Shade(&qml));
     qml.load(QUrl("qrc:/Main.qml"));
     return !qml.rootObjects().isEmpty();
 }

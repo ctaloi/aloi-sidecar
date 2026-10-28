@@ -12,6 +12,8 @@ Rectangle {
 
     property alias search: field
     signal toggleList()
+    // Roll the window up to a small bar of its own (B).
+    signal shade()
 
     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: ui.line }
 
@@ -211,6 +213,13 @@ Rectangle {
                 MenuRow { text: qsTr("Show the meetings folder"); onTriggered: Qt.openUrlExternally("file://" + engine.meetingFolder("")) }
                 MenuRow { text: qsTr("Show the trash folder"); onTriggered: Qt.openUrlExternally("file://" + engine.meetingFolder("").replace(/meetings\/$/, "trash")) }
             }
+        }
+
+        ActionButton {
+            implicitHeight: 30
+            text: "▴"
+            tip: qsTr("Roll up to a small bar on every workspace (B)")
+            onClicked: bar.shade()
         }
 
         KeyCap {

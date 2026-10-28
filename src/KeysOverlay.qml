@@ -46,6 +46,7 @@ Popup {
         ["Ctrl+Shift+K", qsTr("New chat with the agent")],
         [qsTr("Sidecar")],
         ["Ctrl+K", qsTr("Do anything, go to any meeting")],
+        ["B", qsTr("Roll up to a small bar on every workspace / back down")],
         ["?", qsTr("These keys")],
         ["Q", qsTr("Quit (pauses listening)")]
     ]

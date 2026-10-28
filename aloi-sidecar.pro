@@ -9,6 +9,7 @@ HEADERS += \
     src/app.h \
     src/engine.h \
     src/instance.h \
+    src/shade.h \
     src/theme.h \
     src/tools.h
 
@@ -18,6 +19,7 @@ SOURCES += \
     src/app.cpp \
     src/engine.cpp \
     src/instance.cpp \
+    src/shade.cpp \
     src/theme.cpp
 
 RESOURCES += src/resources.qrc
