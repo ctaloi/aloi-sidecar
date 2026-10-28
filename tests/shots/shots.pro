@@ -1,4 +1,4 @@
-QT += core gui qml quick quickcontrols2 dbus network
+QT += core gui qml quick quickcontrols2 dbus network testlib
 CONFIG += c++17
 TARGET = shots
 TEMPLATE = app

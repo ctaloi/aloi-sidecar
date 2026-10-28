@@ -111,7 +111,12 @@ ApplicationWindow {
         function onDone(on) { if (!on) win.shaded = false }
     }
     // Anything that needs the window, a question or a confirm, rolls it down.
-    onOverlayOpenChanged: if (overlayOpen) setShaded(false)
+    onOverlayOpenChanged: if (overlayOpen) setShaded(false); else keyRoot.forceActiveFocus()
+    // Out of an overlay or a box, the keys come back: nothing else holding
+    // the keyboard, it's the window's, so ; > ? still reach their commands.
+    onActiveFocusItemChanged: if (activeFocusItem === null || activeFocusItem === contentItem) Qt.callLater(() => {
+        if (activeFocusItem === null || activeFocusItem === contentItem) keyRoot.forceActiveFocus()
+    })
 
     // The meeting's tabs: the agent, the transcript, the notes.
     function showAgent() { setShaded(false); view = "meetings"; meetingPane.tab = "agent" }
@@ -289,13 +294,15 @@ ApplicationWindow {
     // from here, as in every Aloi app. seqs are Qt's spelling of the keys (a
     // capital is Shift+, a chord is "G,H"); enabled() says when it makes
     // sense, and the palette lists only those. always runs while typing too.
+    // Nothing here may read live state outside enabled() and run(): the list
+    // would be rebuilt, and every Shortcut with it, each time it changed.
     readonly property bool hasMeeting: shown.id !== undefined
     readonly property bool over: hasMeeting && shown.state === "ended"
     readonly property bool onAir: engine.current !== ""
     readonly property bool hasNotes: over && (stage === "ready" || stage === "sendFailed" || stage === "sent" || (stage === "skipped" && shown.wrapup === "ready"))
     readonly property var actions: [
         { id: "listen", show: "space", seqs: ["Space"], group: qsTr("Listening"), enabled: () => engine.connected,
-          label: engine.listening ? qsTr("Pause listening") : onAir ? qsTr("Resume listening") : qsTr("Start listening"),
+          label: qsTr("Listen / pause"),
           run: () => engine.toggleListening() },
         { id: "end", show: "e", seqs: ["E"], group: qsTr("Listening"), label: qsTr("End the meeting that's on"),
           enabled: () => onAir, run: () => act("end", engine.meetingById(engine.current)) },
@@ -322,7 +329,7 @@ ApplicationWindow {
           enabled: () => hasMeeting, run: () => { view = "meetings"; meetingPane.openMenu() } },
         { id: "delete", show: "del", seqs: ["Del"], group: qsTr("Meeting"), label: qsTr("Delete the meeting"), danger: true,
           enabled: () => over, run: () => act("delete", shown) },
-        { id: "draft", show: "d", seqs: ["D"], group: qsTr("Wrap-up"), label: shown.wrapup ? qsTr("Draft the wrap-up again") : qsTr("Draft the wrap-up"),
+        { id: "draft", show: "d", seqs: ["D"], group: qsTr("Wrap-up"), label: qsTr("Draft the wrap-up (again)"),
           enabled: () => over && (shown.lines || 0) > 0 && stage !== "drafting", run: () => act("draft", shown) },
         { id: "finish", show: "a", seqs: ["A"], group: qsTr("Wrap-up"), label: qsTr("Do it all: Notion and the email draft"),
           enabled: () => over && shown.wrapup === "ready" && stage !== "sent" && stage !== "sending", run: () => act("finish", shown) },
@@ -336,7 +343,7 @@ ApplicationWindow {
           enabled: () => hasNotes, run: () => act("copyNotes", shown) },
         { id: "copyTranscript", show: "C", seqs: ["Shift+C"], group: qsTr("Wrap-up"), label: qsTr("Copy the transcript"),
           enabled: () => (shown.lines || 0) > 0, run: () => act("copyTranscript", shown) },
-        { id: "skip", show: "x", seqs: ["X"], group: qsTr("Wrap-up"), label: shown.skipped ? qsTr("Needs a wrap-up after all") : qsTr("No wrap-up needed"),
+        { id: "skip", show: "x", seqs: ["X"], group: qsTr("Wrap-up"), label: qsTr("No wrap-up needed / needed after all"),
           enabled: () => over && stage !== "sent", run: () => act("skip", shown) },
         { id: "revert", show: "", seqs: [], group: qsTr("Wrap-up"), label: qsTr("Go back to Opus's draft"),
           enabled: () => over && !!shown.edited && stage !== "sent", run: () => act("revert", shown) },
@@ -414,6 +421,7 @@ ApplicationWindow {
 
     Item {
         id: keyRoot
+        objectName: "keyRoot"
         anchors.fill: parent
         visible: !win.shaded
         focus: true

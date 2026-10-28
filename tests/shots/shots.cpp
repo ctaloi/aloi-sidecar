@@ -5,12 +5,14 @@
 #include <QDir>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
+#include <QQuickItem>
 #include <QQuickWindow>
 #include <QProcess>
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QtTest/QTest>
 #include <cstdio>
 
 #include "../../src/agent.h"
@@ -206,7 +208,50 @@ int main(int argc, char *argv[]) {
         QMetaObject::invokeMethod(window->findChild<QObject *>("listDrawer"), "close");
         wait(400);
     }
-    window->setProperty("view", "followups");
+    // The keys, pressed as Chris would: the same in every Aloi app. Each
+    // ends where it should, or it counts as a warning and --check fails.
+    QObject *keyRoot = window->findChild<QObject *>("keyRoot");
+    auto press = [&](const QString &keys) {
+        for (const QChar c : keys) {
+            const bool shift = c.isUpper() || QStringLiteral("?>:").contains(c);
+            QTest::keyClick(window, c.toLatin1(), shift ? Qt::ShiftModifier : Qt::NoModifier);
+            wait(120);
+        }
+    };
+    auto escape = [&] { QTest::keyClick(window, Qt::Key_Escape); wait(150); };
+    auto expect = [&](const char *what, bool ok) {
+        if (!ok) {
+            ++warnings;
+            std::fprintf(stderr, "keys: expected %s\n", what);
+        }
+    };
+    auto view = [&] { return window->property("view").toString(); };
+    QMetaObject::invokeMethod(keyRoot, "forceActiveFocus");
+    wait(100);
+    press("gh");
+    expect("g h to go home", view() == "home");
+    press("?");
+    expect("? to list the keys", palette->property("visible").toBool() && palette->property("help").toBool());
+    escape();
+    expect("esc to close the keys", !palette->property("visible").toBool());
+    press(";");
+    expect("; to open the palette", palette->property("visible").toBool() && !palette->property("help").toBool());
+    escape();
+    engine.select("past-0");
+    wait(300);
+    press("gm");
+    expect("g m to open the meeting", view() == "meetings");
+    press(">");
+    expect("> to ask the agent", pane->property("tab").toString() == "agent"
+                                     && window->activeFocusItem() && window->activeFocusItem()->inherits("QQuickTextInput"));
+    escape();
+    escape();
+    expect("esc, out of the ask box, then home", view() == "home");
+    press("/");
+    expect("/ to search", window->activeFocusItem() && window->activeFocusItem()->objectName() == "search");
+    escape();
+    press("gf");
+    expect("g f for the follow-ups", view() == "followups");
     shot("followups", 900);
 
     std::printf("%s: %d lines, %lld messages, %d warnings\n", qPrintable(size), engine.transcript()->count(),

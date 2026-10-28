@@ -45,8 +45,9 @@ Rectangle {
         const p = m.people || []
         return p.length === 1 ? qsTr("with %1").arg(p[0]) : p.length > 1 ? qsTr("with %1 +%2").arg(p[0]).arg(p.length - 1) : ""
     }
+    // Not by the ticking clock: a table built from this would be rebuilt every second.
     function when(m) {
-        const today = Sidecar.group(m, root.now) === "today"
+        const today = Sidecar.group(m, Date.now()) === "today"
         return (today ? "" : Sidecar.dayLabel(m) + "  ·  ") + Sidecar.span(m)
     }
     function open_(m) {

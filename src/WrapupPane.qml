@@ -298,7 +298,7 @@ Rectangle {
                         implicitHeight: 30
                         enabled: !root.drafting
                         text: qsTr("Do it all")
-                        keys: root.width >= 620 ? "A" : ""
+                        keys: root.width >= 620 ? "a" : ""
                         tip: qsTr("File it in Notion as a new page and save the follow-up email to Outlook Drafts (never sent)")
                         onClicked: win.act("finish", root.m)
                     }
@@ -310,7 +310,7 @@ Rectangle {
                         enabled: root.stage !== "sending" && !root.drafting
                         text: root.stage === "sendFailed" ? qsTr("Try again") : root.stage === "sending" ? qsTr("Sending")
                             : qsTr("Notion…")
-                        keys: root.stage === "sending" || root.width < 780 ? "" : "S"
+                        keys: root.stage === "sending" || root.width < 780 ? "" : "s"
                         tip: qsTr("Send to Notion: a new page, or fill in one already there")
                         onClicked: win.act("send", root.m)
                     }
@@ -326,7 +326,7 @@ Rectangle {
                         implicitHeight: 30
                         text: qsTr("Email")
                         tip: qsTr("Write the follow-up email, saved to Outlook Drafts (W)")
-                        keys: root.width >= 780 ? "W" : ""
+                        keys: root.width >= 780 ? "w" : ""
                         onClicked: win.act("email", root.m)
                     }
                     KeyButton {
@@ -334,7 +334,7 @@ Rectangle {
                         implicitHeight: 30
                         text: qsTr("Copy")
                         tip: qsTr("Copy as Markdown")
-                        keys: root.width >= 780 ? "C" : ""
+                        keys: root.width >= 780 ? "c" : ""
                         onClicked: win.act("copyNotes", root.m)
                     }
                 }
