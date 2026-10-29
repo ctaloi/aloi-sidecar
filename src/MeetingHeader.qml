@@ -19,9 +19,23 @@ Rectangle {
     readonly property bool over: has && m.state === "ended"
     readonly property string stage: Sidecar.stage(m)
     property bool editing: false
-    // The switches sit beside the title while at least a short title still
-    // fits there, and drop under it otherwise.
-    readonly property bool narrow: width - 48 < switches.needed + Math.min(title.implicitWidth, 240) + 14
+    // The title comes first. Beside it the switches have their labels; when
+    // that would cut the title short they keep only their glyphs; when even
+    // that would, they drop under it and the title may take two lines. Worked
+    // out from what the title and labels measure, not from the buttons, so
+    // the switches changing shape can't feed back into it.
+    readonly property real room: width - 48 - 14 - titleMetrics.advanceWidth
+    readonly property real glyphWidth: moreButton.implicitWidth
+    readonly property real compactNeeded: (isCurrent ? pauseButton.implicitWidth + 3 * (glyphWidth + switches.spacing) : glyphWidth + switches.spacing)
+                                          + glyphWidth
+    readonly property real labelsWidth: (isCurrent ? endMetrics.advanceWidth + markMetrics.advanceWidth + 32 : 0) + noteMetrics.advanceWidth + 16
+    readonly property bool compact: room < compactNeeded + labelsWidth
+    readonly property bool narrow: room < compactNeeded
+
+    TextMetrics { id: titleMetrics; font: title.font; text: head.m.title || "" }
+    TextMetrics { id: endMetrics; font.pixelSize: 12; text: qsTr("End") }
+    TextMetrics { id: markMetrics; font.pixelSize: 12; text: qsTr("Mark") }
+    TextMetrics { id: noteMetrics; font.pixelSize: 12; text: qsTr("Note") }
 
     function rename() { if (has) { titleEdit.text = m.title; editing = true; titleEdit.forceActiveFocus(); titleEdit.selectAll() } }
     function openMenu() { if (has) meetingMenu.show(m, moreButton, 0, moreButton.height + 4) }
@@ -76,6 +90,8 @@ Rectangle {
                         color: ui.text
                         font.pixelSize: 26
                         font.bold: true
+                        wrapMode: head.narrow ? Text.Wrap : Text.NoWrap
+                        maximumLineCount: head.narrow ? 2 : 1
                         elide: Text.ElideRight
                         HoverHandler { id: titleHover; cursorShape: Qt.IBeamCursor }
                         TapHandler { onDoubleTapped: head.rename() }
@@ -111,6 +127,7 @@ Rectangle {
                     Layout.fillWidth: head.narrow
                     Layout.preferredWidth: head.narrow ? -1 : needed
                     KeyButton {
+                        id: pauseButton
                         visible: head.isCurrent
                         primary: true
                         glyph: head.live ? "pause" : "mic"
@@ -122,6 +139,7 @@ Rectangle {
                         visible: head.isCurrent
                         glyph: "stop"
                         text: qsTr("End")
+                        compact: head.compact
                         keys: "e"
                         tip: qsTr("End the meeting and draft its wrap-up")
                         onClicked: win.act("end", head.m)
@@ -130,6 +148,7 @@ Rectangle {
                         visible: head.isCurrent
                         glyph: "flag"
                         text: qsTr("Mark")
+                        compact: head.compact
                         keys: "m"
                         tip: qsTr("Flag this moment as one that matters")
                         onClicked: win.markNow()
@@ -137,6 +156,7 @@ Rectangle {
                     KeyButton {
                         glyph: "note"
                         text: qsTr("Note")
+                        compact: head.compact
                         keys: "n"
                         tip: qsTr("Type a line of your own into the transcript")
                         onClicked: meetingPane.note()
@@ -168,15 +188,16 @@ Rectangle {
                                            color: head.live ? ui.live : ui.muted })
                             out.push({ text: Sidecar.span(head.m), color: ui.muted })
                             if (head.over) out.push({ text: Sidecar.length(head.m, head.now), color: ui.muted })
-                            out.push({ text: qsTr("%n lines", "", head.isCurrent ? transcript.count : (head.m.lines || 0)), color: ui.faint })
+                            // Echoes (the call's own audio caught by the mic) are
+                            // reassurance, not news: they're under the line count.
+                            out.push({ text: qsTr("%n lines", "", head.isCurrent ? transcript.count : (head.m.lines || 0)), color: ui.faint,
+                                       tip: head.isCurrent && engine.echoes > 0 ? qsTr("%n echoes of the call dropped", "", engine.echoes) : "" })
                             const people = head.m.people || []
                             if (people.length > 0)
                                 out.push({ text: people.length === 1 ? qsTr("with %1").arg(people[0]) : qsTr("with %1 +%2").arg(people[0]).arg(people.length - 1),
-                                           color: ui.muted, tip: people.join("\n") })
+                                           color: ui.muted, tip: people.length > 1 ? people.join("\n") : "" })
                             else if (head.m.event)
                                 out.push({ text: qsTr("from your calendar"), color: ui.faint })
-                            if (head.isCurrent && engine.echoes > 0)
-                                out.push({ text: qsTr("%n echoes dropped", "", engine.echoes), color: ui.faint })
                             return out
                         }
                         delegate: Label {
@@ -189,7 +210,7 @@ Rectangle {
                             color: modelData.color
                             font.pixelSize: 12
                             HoverHandler { id: metaHover; enabled: !!modelData.tip }
-                            ToolTip.visible: metaHover.hovered && (modelData.tip || "").indexOf("\n") >= 0
+                            ToolTip.visible: metaHover.hovered && (modelData.tip || "") !== "" && modelData.tip !== modelData.text
                             ToolTip.delay: 300
                             ToolTip.text: modelData.tip || ""
                         }

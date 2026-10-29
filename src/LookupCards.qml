@@ -13,6 +13,12 @@ Flow {
     property var asked: ({})
     signal look(string prompt)
     visible: items.length > 0
+    // Even columns across the pane, so a row of cards doesn't leave a ragged
+    // gap down the right.
+    readonly property int columns: Math.max(1, Math.min(items.length, Math.floor((width + spacing) / 230)))
+    readonly property real cardWidth: Math.floor((width - spacing * (columns - 1)) / columns)
+
+    FontMetrics { id: whyMetrics; font.pixelSize: 11 }
 
     readonly property var kinds: ({
         customer: qsTr("customer"), number: qsTr("number"), ticket: qsTr("ticket"),
@@ -26,7 +32,7 @@ Flow {
             required property var modelData
             readonly property string key: engine.selected + "|" + modelData.query
             readonly property bool done: !!cards.asked[key]
-            width: Math.min(262, Math.max(150, body.implicitWidth + 26), cards.width)
+            width: cards.cardWidth
             height: body.implicitHeight + 16
             radius: Math.min(4, theme.radius)
             color: hover.hovered && !card.done ? ui.hover : ui.raised
@@ -66,7 +72,11 @@ Flow {
                     text: card.modelData.why
                     color: ui.muted
                     font.pixelSize: 11
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
                     elide: Text.ElideRight
+                    // Two lines' room either way, so cards side by side match.
+                    height: Math.max(implicitHeight, Math.ceil(whyMetrics.height * 2))
                 }
             }
             HoverHandler { id: hover; cursorShape: card.done ? Qt.ArrowCursor : Qt.PointingHandCursor }

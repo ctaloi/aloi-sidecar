@@ -265,46 +265,87 @@ Rectangle {
             onLook: prompt => pane.ask(prompt)
         }
         // Before the first question the takeaways sit under the intro; after
-        // it, the answers take the room above them.
-        Item { Layout.fillHeight: true; visible: agent.messages.length === 0 }
+        // it, the answers take the room above them. While that room's there,
+        // what to ask sits in it, right under what's known so far, one per
+        // line with its key; when it isn't, they're chips above the box.
+        Item {
+            id: room
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: agent.messages.length === 0
+            clip: true
+            // The room is what's left over, so the list inside it can't
+            // change how much there is.
+            readonly property bool fits: height >= starters.implicitHeight + starters.y + 8
+            ColumnLayout {
+                id: starters
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: 14
+                anchors.rightMargin: 14
+                y: 14
+                spacing: 6
+                visible: room.fits && !agent.running
+                Label {
+                    Layout.leftMargin: 2
+                    text: qsTr("TRY ASKING")
+                    color: ui.muted
+                    font.pixelSize: 10
+                    font.letterSpacing: 1.4
+                    font.bold: true
+                }
+                Repeater {
+                    model: pane.chips
+                    delegate: Rectangle {
+                        required property string modelData
+                        required property int index
+                        Layout.fillWidth: true
+                        implicitHeight: 34
+                        radius: Math.min(4, theme.radius)
+                        color: starterMouse.containsMouse ? ui.hover : ui.raised
+                        border.color: starterMouse.containsMouse ? ui.alpha(theme.accent, 0.6) : ui.line
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 12
+                            spacing: 10
+                            KeyCap { text: index + 1; tone: starterMouse.containsMouse ? theme.accent : ui.faint }
+                            Text {
+                                Layout.fillWidth: true
+                                text: modelData
+                                color: starterMouse.containsMouse ? ui.text : ui.muted
+                                font.pixelSize: 12
+                                elide: Text.ElideRight
+                            }
+                        }
+                        MouseArea {
+                            id: starterMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: pane.ask(modelData)
+                        }
+                    }
+                }
+            }
+            Chips {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: 14
+                anchors.rightMargin: 14
+                y: 14
+                visible: !room.fits && !agent.running
+            }
+        }
 
-        Flow {
-            id: chipRow
+        Chips {
             Layout.fillWidth: true
             Layout.leftMargin: 14
             Layout.rightMargin: 14
             Layout.topMargin: 6
-            spacing: 6
-            // Before the first question, or while in the box; 1–4 work anyway.
-            visible: !agent.running && (agent.messages.length === 0 || field.activeFocus)
-            Repeater {
-                model: pane.chips
-                delegate: Rectangle {
-                    required property string modelData
-                    required property int index
-                    implicitWidth: Math.min(chipText.implicitWidth + 20, chipRow.width)
-                    implicitHeight: chipText.implicitHeight + 10
-                    radius: Math.min(theme.radius, implicitHeight / 2)
-                    color: chipMouse.containsMouse ? ui.hover : ui.raised
-                    border.color: ui.line
-                    Text {
-                        id: chipText
-                        anchors.centerIn: parent
-                        width: Math.min(implicitWidth, chipRow.width - 20)
-                        elide: Text.ElideRight
-                        text: (index + 1) + "  " + modelData
-                        color: chipMouse.containsMouse ? ui.text : ui.muted
-                        font.pixelSize: 11
-                    }
-                    MouseArea {
-                        id: chipMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: pane.ask(modelData)
-                    }
-                }
-            }
+            // After the first question, while in the box (before it they're
+            // in the room above). 1–4 work anyway.
+            visible: !agent.running && agent.messages.length > 0 && field.activeFocus
         }
 
         RowLayout {
@@ -353,6 +394,40 @@ Rectangle {
                   + "    <font color='" + theme.accent + "'>esc</font> " + (agent.running ? qsTr("stops it") : qsTr("leaves"))
             color: ui.faint
             font.pixelSize: 11
+        }
+    }
+
+    // The questions to start with, as chips, where there isn't room to list them.
+    component Chips: Flow {
+        id: chipRow
+        spacing: 6
+        Repeater {
+            model: pane.chips
+            delegate: Rectangle {
+                required property string modelData
+                required property int index
+                implicitWidth: Math.min(chipText.implicitWidth + 20, chipRow.width)
+                implicitHeight: chipText.implicitHeight + 10
+                radius: Math.min(theme.radius, implicitHeight / 2)
+                color: chipMouse.containsMouse ? ui.hover : ui.raised
+                border.color: ui.line
+                Text {
+                    id: chipText
+                    anchors.centerIn: parent
+                    width: Math.min(implicitWidth, chipRow.width - 20)
+                    elide: Text.ElideRight
+                    text: (index + 1) + "  " + modelData
+                    color: chipMouse.containsMouse ? ui.text : ui.muted
+                    font.pixelSize: 11
+                }
+                MouseArea {
+                    id: chipMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: pane.ask(modelData)
+                }
+            }
         }
     }
 }
