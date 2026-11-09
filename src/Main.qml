@@ -46,6 +46,8 @@ ApplicationWindow {
     // Meetings waiting on a wrap-up, oldest first: the Meetings count and Home's cards.
     readonly property var waiting: engine.meetings.filter(m => Sidecar.needsWrapup(m, Date.now()))
                                         .sort((a, b) => a.started - b.started)
+    // Of those, what Send all would take: drafted, or part way into Notion.
+    readonly property var sendable: waiting.filter(m => ["ready", "sendFailed"].includes(Sidecar.stage(m)))
     // Home, a meeting, or every follow-up across them (g h, g m, g f).
     property string view: "home"
     function goHome() { setShaded(false); view = "home" }
@@ -196,8 +198,25 @@ ApplicationWindow {
                 toast.show(qsTr("Draft the wrap-up first (D)"))
                 return
             }
+            // A new page straight away; the sheet comes up only if there's a
+            // page from that day it might belong on (onChoosePage).
+            engine.finish(id, false)
+            break
+        }
+        case "choosePage": {
             const notes = id === engine.selected && engine.wrapup ? (engine.wrapup.edited || engine.wrapup.draft || {}) : {}
             sendSheet.open(m, notes.title || m.title)
+            break
+        }
+        case "sendAll": {
+            const ids = win.sendable.map(o => o.id)
+            if (!ids.length || engine.bulk.running) return
+            confirm.ask({
+                title: qsTr("Send %n wrap-ups to Notion?", "", ids.length),
+                detail: qsTr("Each becomes a new page, as drafted or as you edited it. Any with a page from that day stay here for you to pick."),
+                confirm: qsTr("Send"),
+                run: () => engine.sendAll(ids)
+            })
             break
         }
         case "revert":
@@ -224,7 +243,7 @@ ApplicationWindow {
             engine.copyTranscript(id)
             break
         case "finish":
-            engine.finish(id)
+            engine.finish(id, true)
             toast.show(qsTr("Filing it in Notion and putting the email in your Outlook Drafts…"))
             break
         case "merge": {
@@ -282,7 +301,19 @@ ApplicationWindow {
     Connections {
         target: engine
         function onCopied(what) { toast.show(what) }
-        function onChoosePage(id) { win.act("send", engine.meetingById(id)) }
+        function onChoosePage(id) { win.act("choosePage", engine.meetingById(id)) }
+        // Said once, when a Send all this window watched comes to an end.
+        property bool bulkRunning: false
+        function onBulkChanged() {
+            const b = engine.bulk
+            const ended = bulkRunning && !b.running
+            bulkRunning = !!b.running
+            if (!ended || !b.total) return
+            const pick = (b.choose || []).length
+            toast.show(qsTr("%n sent to Notion", "", b.done || 0)
+                       + (pick ? ", " + qsTr("%n to pick a page for", "", pick) : "")
+                       + (b.failed ? ", " + qsTr("%n failed", "", b.failed) : ""))
+        }
     }
     // Enter in the search box opens the first meeting found, at the line.
     Connections {
@@ -331,10 +362,12 @@ ApplicationWindow {
           enabled: () => over, run: () => act("delete", shown) },
         { id: "draft", show: "d", seqs: ["D"], group: qsTr("Wrap-up"), label: qsTr("Draft the wrap-up (again)"),
           enabled: () => over && (shown.lines || 0) > 0 && stage !== "drafting", run: () => act("draft", shown) },
-        { id: "finish", show: "a", seqs: ["A"], group: qsTr("Wrap-up"), label: qsTr("Do it all: Notion and the email draft"),
+        { id: "finish", show: "a", seqs: ["A"], group: qsTr("Wrap-up"), label: qsTr("Send to Notion and draft the email"),
           enabled: () => over && shown.wrapup === "ready" && stage !== "sent" && stage !== "sending", run: () => act("finish", shown) },
         { id: "send", show: "s", seqs: ["S"], group: qsTr("Wrap-up"), label: qsTr("Send to Notion"),
           enabled: () => hasNotes && stage !== "sent" && stage !== "sending", run: () => act("send", shown) },
+        { id: "sendAll", show: "", seqs: [], group: qsTr("Wrap-up"), label: qsTr("Send everything ready to Notion"),
+          enabled: () => sendable.length > 0 && !engine.bulk.running, run: () => act("sendAll", null) },
         { id: "email", show: "w", seqs: ["W"], group: qsTr("Wrap-up"), label: qsTr("Write the follow-up email"),
           enabled: () => over && shown.wrapup === "ready", run: () => act("email", shown) },
         { id: "notion", show: "o", seqs: ["O"], group: qsTr("Wrap-up"), label: qsTr("Open in Notion"),

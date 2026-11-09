@@ -53,6 +53,23 @@ private slots:
         QVERIFY(t.textAfter(-1).contains("Hector: Hi"));
     }
 
+    // Typed notes are gathered for the Notes column, and go to the agent with the rest.
+    void notesAreTheNoteLines() {
+        Transcript t;
+        QSignalSpy changed(&t, &Transcript::notesChanged);
+        t.setLines({{0, "Them", "Hi", "10:00:00", 1, 0}, {1, "Mark", "Marked this moment", "10:00:01", 2, 0}});
+        QCOMPARE(t.notes().size(), 0);
+        changed.clear();
+        t.append({2, "Them", "Hello", "10:00:02", 3, 0});
+        QCOMPARE(changed.count(), 0);  // a line said doesn't touch the column
+        t.append({3, "Note", "check the contract", "10:00:03", 4, 0});
+        QCOMPARE(changed.count(), 1);
+        QCOMPARE(t.notes().size(), 1);
+        QCOMPARE(t.notes().first().toMap().value("text").toString(), QString("check the contract"));
+        QCOMPARE(t.notes().first().toMap().value("id").toInt(), 3);
+        QVERIFY(t.textAfter(2).contains("Note: check the contract"));
+    }
+
     void liveMeetingFromEvents() {
         Engine engine("http://127.0.0.1:1");
         engine.handleEvent({{"type", "meetings"}, {"meetings", QJsonArray{meeting("b", "live", 2000), meeting("a", "ended", 1000)}}});

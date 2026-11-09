@@ -45,7 +45,7 @@ WRAPUP = {
     "summary": "The porting queue is down to six. Two are waiting on the losing carrier, one of them Lumen, which Chris will chase this afternoon.\n\nThe new softphone build is on track for beta on Thursday.",
     "topics": [{"title": "Porting queue", "points": ["Six ports left", "Two waiting on the losing carrier"]},
                {"title": "Softphone beta", "points": ["Build goes to beta Thursday"]}],
-    "mine": [{"text": "Chase the stuck Lumen port with the carrier", "due": "this afternoon", "at": 1},
+    "mine": [{"text": "Chase the stuck Lumen port with the carrier", "due": "this afternoon", "at": 1, "flagged": True},
              {"text": "Send the beta testers the softphone build notes", "due": "Thursday", "at": 2, "done": True}],
     "theirs": [{"who": "Dana", "text": "Escalate the second stuck port with the losing carrier", "due": "tomorrow", "at": 0}],
     "decisions": [{"text": "The softphone build goes to beta on Thursday", "due": "", "at": 2}],
@@ -114,7 +114,8 @@ def followups():
         for i, item in enumerate(notes["mine"]):
             out.append({"meeting": mid, "title": titles[mid]["title"], "started": titles[mid]["started"], "index": i,
                         "text": item["text"], "due": item.get("due", ""), "at": item.get("at", -1),
-                        "done": bool(item.get("done")), "inNotion": mid in notion, "syncError": None})
+                        "done": bool(item.get("done")), "flagged": bool(item.get("flagged")),
+                        "inNotion": mid in notion, "syncError": None})
     return sorted(out, key=lambda f: (-f["started"], f["index"]))
 
 
@@ -200,6 +201,20 @@ async def ok(request):
     return web.json_response({})
 
 
+noted = [0]
+
+
+async def note(request):
+    """A note lands as a line, the way the real engine's does."""
+    body = await request.json()
+    noted[0] += 1
+    t = time.time()
+    seg = {"id": len(LINES) + noted[0], "speaker": "Note", "start": t, "end": t, "text": body.get("text", "")}
+    for q in clients:
+        q.put_nowait({"type": "segment", "meeting": request.match_info["id"], **seg, "time": time.strftime("%H:%M:%S")})
+    return web.json_response(seg)
+
+
 TAKEAWAYS = {"updated": NOW - 50, "lines": 9,
              "asked": [{"text": "Does the auto attendant need holiday hours?", "at": 10}],
              "mine": [{"text": "Send pricing for two conference phones today", "at": 9},
@@ -269,7 +284,7 @@ app.router.add_post("/meeting/{id}/notion", ok)
 app.router.add_post("/meeting/{id}/resume", ok)
 app.router.add_post("/meeting/{id}/merge", ok)
 app.router.add_post("/meeting/{id}/finish", ok)
-app.router.add_post("/meeting/{id}/note", ok)
+app.router.add_post("/meeting/{id}/note", note)
 app.router.add_delete("/meeting/{id}", ok)
 app.router.add_patch("/settings", ok)
 app.router.add_post("/_call", set_call)
@@ -277,6 +292,8 @@ app.router.add_get("/followups", get_followups)
 app.router.add_get("/search", search)
 app.router.add_post("/followups/sync", sync_followups)
 app.router.add_post("/followups/done", ok)
+app.router.add_post("/followups/flag", ok)
+app.router.add_post("/notion/bulk", ok)
 app.router.add_post("/followups/remove", get_followups)
 app.router.add_post("/meeting/{id}/email", ok)
 app.router.add_put("/meeting/{id}/email", ok)

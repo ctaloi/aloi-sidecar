@@ -6,7 +6,8 @@ import "sidecar.js" as Sidecar
 // Going in: what's on file from earlier meetings in the same series or with
 // the same people. Their gist, what Chris still owes, what the others said
 // they'd do. It's all already in Sidecar, so it costs nothing; the button
-// asks the agent for more (mail, Teams) only when he wants it.
+// asks the agent for more (mail, Teams) only when he wants it. During a call
+// it's one line, so what's being said stays in view; a tap opens it.
 Rectangle {
     id: card
     readonly property var b: engine.brief
@@ -14,6 +15,8 @@ Rectangle {
     readonly property var mine: b.mine || []
     readonly property var theirs: b.theirs || []
     signal ask(string prompt)
+    property bool chosen: false
+    readonly property bool folded: !chosen && engine.selected !== "" && engine.selected === engine.current
     visible: related.length > 0
     implicitHeight: column.implicitHeight + 22
     radius: Math.min(6, theme.radius)
@@ -40,15 +43,19 @@ Rectangle {
             }
             Label {
                 Layout.fillWidth: true
-                text: card.related[0] && card.related[0].series ? qsTr("from earlier in this series") : qsTr("from earlier meetings with them")
+                text: card.folded ? (card.related[0] ? card.related[0].title : "") + (card.mine.length ? "  ·  " + qsTr("you still owe %n", "", card.mine.length) : "")
+                    : card.related[0] && card.related[0].series ? qsTr("from earlier in this series") : qsTr("from earlier meetings with them")
                 color: ui.faint
                 font.pixelSize: 10
+                elide: Text.ElideRight
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: card.chosen = !card.chosen }
             }
             Label {
                 text: qsTr("Brief me with mail and Teams")
                 color: briefHover.hovered ? theme.accent : ui.muted
                 font.pixelSize: 11
-                visible: !agent.running
+                visible: !agent.running && !card.folded
                 HoverHandler { id: briefHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
                     onTapped: {
@@ -62,7 +69,7 @@ Rectangle {
 
         // The earlier meetings, newest first, each with its gist.
         Repeater {
-            model: card.related
+            model: card.folded ? [] : card.related
             delegate: ColumnLayout {
                 required property var modelData
                 Layout.fillWidth: true
@@ -95,7 +102,7 @@ Rectangle {
             columns: card.width >= 560 && card.mine.length && card.theirs.length ? 2 : 1
             columnSpacing: 18
             rowSpacing: 8
-            visible: card.mine.length + card.theirs.length > 0
+            visible: !card.folded && card.mine.length + card.theirs.length > 0
             Repeater {
                 model: [
                     { title: qsTr("You still owe"), tone: theme.accent, items: card.mine.map(i => i.text + (i.due ? " (" + i.due + ")" : "")) },

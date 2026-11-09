@@ -39,9 +39,13 @@ Claude Code.
   it and drafts a summary, what you have to do, what the others committed
   to, decisions and open questions, each linked to the moment it was said.
   You edit it in place (edits are kept apart from the draft), then **Send
-  to Notion** files it in your private My Meetings database: a new page, or
-  filling in one something else already made that day. Meetings waiting
-  for this sit under **Needs wrap-up**.
+  to Notion** (`s`) files it in your private My Meetings database as a new
+  page, asking first only if something else already made one that day that
+  it could fill in. Once it's in Notion, **Follow-up email** is the next
+  step. Meetings waiting for this sit under **Needs wrap-up**.
+- **Send them all.** Home's **Send N to Notion** files everything drafted,
+  one at a time. Any meeting with a page from that day stays behind, marked
+  Pick a page: nothing merges by guessing.
 - **Right-click any meeting** (or `Menu`, or the ⋯ by its title) for
   everything else: draft again, send, open in Notion, copy the wrap-up or
   transcript, mark it as needing no wrap-up, show its files, delete it (to
@@ -51,14 +55,16 @@ Claude Code.
   they said they'd do. "Brief me with mail and Teams" asks the agent for more.
 - **Lookup cards.** The takeaways pick out what's worth checking (a
   customer, a number, a ticket, a circuit); one click has the agent look it
-  up with your skills, read-only.
+  up with your skills, read-only. Two at a time; +N has the rest.
+- **The call stays in view.** During a call the Agent tab keeps the last of
+  what's being said under the answers. Going In is one line until you tap
+  it, and the questions to ask wait until you're in the ask box.
 - **Voices (settings ⋯, off until you turn it on).** The other side is told
   apart by voice (Voice 1, Voice 2…, per meeting) and named from the
   conversation, or by you: right-click a line → "This is…". Wrap-ups,
   takeaways and Notion use the names.
-- **Do it all (`A`).** After a call: a new Notion page and the follow-up email
-  in Outlook Drafts, in one click (it asks which page when there's already
-  one from that day to fill in).
+- **Notion and the email together (`A`).** From the menu or palette: a new
+  Notion page and the follow-up email in Outlook Drafts, in one go.
 - **It records calls by itself.** When another app (Teams, Zoom, a browser
   tab) holds the mic for more than a few seconds, Sidecar starts listening
   straight away, named from the call app's window and your calendar, and a
@@ -76,12 +82,16 @@ Claude Code.
   red with the elapsed time while Sidecar listens, and its panel has Join
   and listen, Stop, and what's left to wrap up. See `plugin/README.md`.
 - **Takeaways while you talk.** Every couple of minutes Haiku keeps four
-  short lists in the agent panel: asked and not answered, what you said
-  you'd do, decided, and open. `m` marks a moment, `n` types a note; both
-  go into the transcript and weigh on the wrap-up.
-- **Follow-ups (`g f`)** gathers what you committed to in every meeting,
-  oldest first. Ticking one off ticks it on the meeting's Notion page too,
-  and ticks made in Notion come back.
+  short lists: asked and not answered and what you said you'd do show (the
+  latest three of each); decided and open stay a count until you tap for
+  them. `m` marks a moment. `n` types a note in My notes, beside the live lines
+  (on the Transcript tab, in the bar along its foot). Both go into the
+  transcript, so the agent, the takeaways and the wrap-up all read them.
+- **Follow-ups (`g f`)** gathers what you committed to in every meeting.
+  Flag what matters and it leads the list. A filed meeting's follow-ups are
+  rows in the Follow-ups database in Notion, each linked to its meeting;
+  ticks and flags go both ways, and deleting a row deletes the follow-up.
+  Meetings sent before the database keep their to-dos, which stay in step.
 - **No listening to dead air.** After five minutes with nothing said, a
   notification asks if the call's still on; unanswered and still quiet, the
   meeting ends three minutes later.
@@ -124,8 +134,8 @@ goes back. A capital is Shift (`C` is Shift+C); `g h` is g, then h.
 | `.` / `menu` | Everything for the meeting (or right-click it) |
 | `del` | Delete the meeting (to the trash folder) |
 | `d` | Draft the wrap-up (again) |
-| `a` | Do it all: file in Notion and save the follow-up email to Drafts |
 | `s` | Send to Notion |
+| `a` | Send to Notion and save the follow-up email to Drafts |
 | `o` | Open it in Notion |
 | `w` | Write the follow-up email, saved to Outlook Drafts (never sent) |
 | `c` / `C` | Copy the wrap-up as Markdown / the transcript |

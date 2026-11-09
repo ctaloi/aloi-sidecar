@@ -27,10 +27,13 @@ import agenda
 import calls
 import mailer
 import takeaways
+import tools
 import voices
 import wrapup
 import notion
 from notion import Notion, NotionError
+
+tools.extend_path()
 
 RATE = 16000
 CHUNK = 1600  # 100 ms of samples per read
@@ -254,6 +257,8 @@ class Sidecar:
         self.notion = Notion()
         self.drafting = {}  # meeting id -> task
         self.sending = {}
+        self.bulk = {"running": False}  # Send all, as it goes
+        self.syncing = asyncio.Lock()  # one pass over the Follow-ups database at a time
         self.settings = {**DEFAULTS, **(json.loads(SETTINGS.read_text()) if SETTINGS.exists() else {})}
         self.call = None  # {"app", "since"} while another app holds the mic
         self.prompt = None  # the notification task asking about the call
@@ -302,7 +307,7 @@ class Sidecar:
                 "current": self.current.id if self.current else None,
                 "channels": [{"label": c.label, "speaker": c.speaker} for c in self.channels],
                 "call": self.call, "settings": self.settings, "to_wrap_up": self.to_wrap_up(),
-                "followups_open": self.open_followups()}
+                "followups_open": self.open_followups(), "bulk": self.bulk}
 
     def to_wrap_up(self):
         """Meetings from the last week still to wrap up, for the bar."""
@@ -687,8 +692,10 @@ class Sidecar:
     def edit_wrapup(self, m, edited, tick=True):
         """Saves Chris's version of the wrap-up. What the engine keeps on each
         follow-up (its Notion to-do, when it was ticked) survives a save from
-        a window that didn't have it yet, and a follow-up ticked or unticked
-        here is ticked or unticked on its Notion page too."""
+        a window that didn't have it yet, and a follow-up ticked or flagged
+        here is ticked or flagged in Notion too. tick says where a change is
+        pushed: True everywhere, False nowhere, "todo" or "row" only there
+        (when it came from the other one)."""
         w = dict(m.wrapup() or {"state": "ready", "draft": None})
         old = (m.notes() or {}).get("mine", [])
         if edited:
@@ -701,20 +708,27 @@ class Sidecar:
                     before = old[i]  # its text was edited; it's still the same to-do
                 if not before:
                     continue
-                for key in ("notion", "done_at"):
+                for key in ("notion", "row", "flagged", "done_at"):
                     if key in before and key not in item:
                         item[key] = before[key]
-                if bool(item.get("done")) != bool(before.get("done")):
+                ticked = bool(item.get("done")) != bool(before.get("done"))
+                flagged = bool(item.get("flagged")) != bool(before.get("flagged"))
+                if ticked:
                     item["done_at"] = time.time() if item.get("done") else None
-                    if tick and item.get("notion"):
+                    if tick in (True, "todo") and item.get("notion"):
                         asyncio.create_task(self._tick(m, i, item["notion"], bool(item.get("done"))))
-            # Taken out (fewer than before, and its to-do isn't kept by any
-            # that remain): it comes off the Notion page too.
+                if (ticked or flagged) and tick in (True, "row") and item.get("row"):
+                    asyncio.create_task(self._push_row(m, i, item["row"]))
+            # Taken out (fewer than before, and its to-do or row isn't kept by
+            # any that remain): it comes off Notion too.
             if tick and len(edited["mine"]) < len(old):
-                kept = {i.get("notion") for i in edited["mine"]}
+                todos = {i.get("notion") for i in edited["mine"]}
+                kept = {i.get("row") for i in edited["mine"]}
                 for o in old:
-                    if o.get("notion") and o["notion"] not in kept:
+                    if tick in (True, "todo") and o.get("notion") and o["notion"] not in todos:
                         asyncio.create_task(self._remove_todo(o["notion"]))
+                    if tick in (True, "row") and o.get("row") and o["row"] not in kept:
+                        asyncio.create_task(self._remove_row(o["row"]))
         w["edited"] = edited or None
         if w["state"] == "failed" and edited:
             w["state"] = "ready"
@@ -760,12 +774,12 @@ class Sidecar:
         ours = {(o.meta.get("notion") or {}).get("id", "").replace("-", "") for o in self.meetings.values()}
         return [p for p in pages if p["id"].replace("-", "") not in ours]
 
-    async def finish(self, m):
-        """Everything after a call in one go: filed in Notion as a new page,
-        and the follow-up email written (unless it already is) and saved to
-        Outlook Drafts. Never sent. Each part reports as it does on its own.
-        When there's already a page from that day it could fill in, the page
-        is left to Chris to choose ("choose"); the email still goes ahead."""
+    async def finish(self, m, email=True):
+        """Filed in Notion as a new page and, unless email is False, the
+        follow-up email written (unless it already is) and saved to Outlook
+        Drafts. Never sent. Each part reports as it does on its own. When
+        there's already a page from that day it could fill in, the page is
+        left to Chris to choose ("choose"); the email still goes ahead."""
         if not m.notes():
             return None
         started = {"notion": False, "email": False}
@@ -776,7 +790,7 @@ class Sidecar:
                 pages = []  # Notion unreachable: the send reports that itself
             started["notion"] = "choose" if pages else self.send(m)
         e = (m.wrapup() or {}).get("email") or {}
-        if e.get("state") not in ("saved", "saving", "writing"):
+        if email and e.get("state") not in ("saved", "saving", "writing"):
             asyncio.create_task(self._finish_email(m))
             started["email"] = True
         return started
@@ -787,6 +801,50 @@ class Sidecar:
             await self._write_email(m)
         if ((m.wrapup() or {}).get("email") or {}).get("state") == "ready":
             await self.save_email(m)
+
+    def send_all(self, ids):
+        """Files the meetings Chris was shown, one at a time in the background.
+        Returns how many it took on. Takes only what a single Send would."""
+        if self.bulk.get("running"):
+            return None
+        todo = [m for m in (self.meetings.get(i) for i in ids) if m and self.sendable(m)]
+        if todo:
+            self.set_bulk(running=True, total=len(todo), done=0, failed=0, choose=[])
+            asyncio.create_task(self._send_all(todo))
+        return len(todo)
+
+    def sendable(self, m):
+        s = m.summary()
+        return (s.get("state") == "ended" and s["wrapup"] == "ready" and not s.get("skipped") and m.notes()
+                and (m.meta.get("notion") or {}).get("state") not in ("sent", "sending") and m.id not in self.sending)
+
+    def set_bulk(self, **changes):
+        self.bulk = {**self.bulk, **changes}
+        self.broadcast({"type": "bulk", "bulk": self.bulk})
+
+    async def _send_all(self, todo):
+        """In turn, so hundreds of block appends don't pile on Notion's rate
+        limit, and so each page is on file before the next meeting looks for
+        pages from its day. A page that could be this meeting is left for
+        Chris to pick: nothing merges, or duplicates, by guessing."""
+        done, failed, choose = 0, 0, []
+        for m in todo:
+            try:
+                # One that failed part way has its page and carries on with it.
+                fresh = not (m.meta.get("notion") or {}).get("id")
+                if fresh and await self.fill_ins(m):
+                    choose.append(m.id)
+                elif self.send(m):
+                    await self.sending[m.id]
+                    if (m.meta.get("notion") or {}).get("state") == "sent":
+                        done += 1
+                    else:
+                        failed += 1
+            except Exception as e:  # Notion unreachable: nothing filed unchecked
+                print(f"bulk send: {m.id}: {e}", file=sys.stderr, flush=True)
+                failed += 1
+            self.set_bulk(done=done, failed=failed, choose=choose)
+        self.set_bulk(running=False)
 
     def send(self, m, target=None):
         """Starts filing the meeting in Notion in the background."""
@@ -813,6 +871,12 @@ class Sidecar:
                     if int(i) < len(doc["mine"]):
                         doc["mine"][int(i)]["notion"] = block_id
                 self.edit_wrapup(m, doc)
+            if progress.get("rows"):
+                try:
+                    async with self.syncing:
+                        await self.add_rows(m, await notion.rows(self.notion))
+                except NotionError as e:  # it's filed; the next sync adds them
+                    print(f"notion: follow-ups for {m.id}: {e}", file=sys.stderr, flush=True)
         except Exception as e:
             progress = dict(m.meta.get("notion") or {})
             progress.update(state="failed", error=str(e) or type(e).__name__)
@@ -964,31 +1028,50 @@ class Sidecar:
                 out.append({"meeting": m.id, "title": m.meta["title"], "started": m.meta["started"], "index": i,
                             "text": item["text"], "due": item.get("due", ""), "at": item.get("at", -1),
                             "done": bool(item.get("done")), "doneAt": item.get("done_at"),
-                            "inNotion": sent and bool(item.get("notion")), "syncError": item.get("sync_error")})
+                            "flagged": bool(item.get("flagged")),
+                            "inNotion": sent and bool(item.get("notion") or item.get("row")),
+                            "syncError": item.get("sync_error")})
         return sorted(out, key=lambda f: (-f["started"], f["index"]))  # newest meeting first
 
     def open_followups(self):
         return sum(1 for f in self.followups() if not f["done"])
 
-    def set_done(self, m, index, done, from_notion=False):
-        """Ticks a follow-up off (or back on) in the meeting's wrap-up, and on
-        its Notion page unless that's where the tick came from."""
+    def set_done(self, m, index, done, tick=True):
+        """Ticks a follow-up off (or back on) in the meeting's wrap-up, and in
+        Notion wherever tick says (see edit_wrapup)."""
+        self.set_item(m, index, tick, done=bool(done))
+
+    def set_flagged(self, m, index, flagged, tick=True):
+        self.set_item(m, index, tick, flagged=bool(flagged))
+
+    def set_item(self, m, index, tick, **changes):
         doc = json.loads(json.dumps(m.notes()))
-        item = doc["mine"][index]
-        item["done"] = bool(done)
-        item.pop("sync_error", None)
-        self.edit_wrapup(m, doc, tick=not from_notion)
+        doc["mine"][index].update(changes)
+        doc["mine"][index].pop("sync_error", None)
+        self.edit_wrapup(m, doc, tick=tick)
         self.broadcast(self.state())
+
+    def sync_failed(self, m, index, key, value, error):
+        doc = json.loads(json.dumps(m.notes()))
+        if index < len(doc["mine"]) and doc["mine"][index].get(key) == value:
+            doc["mine"][index]["sync_error"] = str(error) or "Couldn't reach Notion"
+            self.edit_wrapup(m, doc, tick=False)
+            self.broadcast({"type": "followups"})
+
+    async def _push_row(self, m, index, row_id):
+        """Ticks and flags live together on the row, so both go each time, as
+        they stand when this runs."""
+        try:
+            item = m.notes()["mine"][index]
+            await notion.set_row(self.notion, row_id, item.get("done"), item.get("flagged"))
+        except Exception as e:
+            self.sync_failed(m, index, "row", row_id, e)
 
     async def _tick(self, m, index, block_id, done):
         try:
             await notion.tick(self.notion, block_id, done)
         except Exception as e:
-            doc = json.loads(json.dumps(m.notes()))
-            if index < len(doc["mine"]) and doc["mine"][index].get("notion") == block_id:
-                doc["mine"][index]["sync_error"] = str(e) or "Couldn't reach Notion"
-                self.edit_wrapup(m, doc, tick=False)
-                self.broadcast({"type": "followups"})
+            self.sync_failed(m, index, "notion", block_id, e)
 
     def brief(self, m, keep=3, days=90):
         """What Sidecar already knows going into a meeting, from meetings
@@ -1023,7 +1106,7 @@ class Sidecar:
 
     def remove_followup(self, m, index):
         """Takes a follow-up out of the meeting's wrap-up altogether (not done:
-        gone), and off its Notion page."""
+        gone), and out of Notion."""
         doc = json.loads(json.dumps(m.notes()))
         del doc["mine"][index]
         self.edit_wrapup(m, doc)
@@ -1035,13 +1118,83 @@ class Sidecar:
         except Exception as e:
             print(f"notion: couldn't remove to-do {block_id}: {e}", file=sys.stderr, flush=True)
 
+    async def _remove_row(self, row_id):
+        try:
+            await notion.remove_row(self.notion, row_id)
+        except Exception as e:
+            print(f"notion: couldn't remove follow-up {row_id}: {e}", file=sys.stderr, flush=True)
+
+    async def add_rows(self, m, existing):
+        """Gives a filed meeting's follow-ups their rows. Each id is saved as
+        it's made, and a row already there for this meeting with the same
+        words is taken up rather than made again, so being cut off or redrafted
+        never leaves a second row. Returns how many it made."""
+        n = m.meta.get("notion") or {}
+        page = n.get("id", "").replace("-", "")
+        made = 0
+        taken = {i.get("row") for i in m.notes()["mine"]}
+        for index, item in enumerate(m.notes()["mine"]):
+            if item.get("row") or not (item.get("text") or "").strip():
+                continue
+            row = next((r for r, v in existing.items() if r not in taken and page in v["meeting"]
+                        and v["text"].strip() == item["text"].strip()), None)
+            if not row:
+                row = await notion.add_row(self.notion, item, n["id"], m.meta["started"])
+                existing[row] = {"text": item["text"], "done": bool(item.get("done")),
+                                 "flagged": bool(item.get("flagged")), "meeting": [page]}
+                made += 1
+            taken.add(row)
+            doc = json.loads(json.dumps(m.notes()))
+            doc["mine"][index]["row"] = row
+            self.edit_wrapup(m, doc, tick=False)
+        return made
+
+    async def pull_rows(self):
+        """The Follow-ups database, both ways: every filed follow-up has its
+        row, and ticks, flags and deletions made there come back. A follow-up
+        whose last push failed goes up again instead. Returns what changed,
+        what's gone, and which follow-ups the row has just decided, so an old
+        to-do that hasn't caught up doesn't undo them."""
+        changed, gone, settled = 0, [], set()
+        if not await notion.followups_ready(self.notion):
+            return changed, gone, settled
+        existing = await notion.rows(self.notion)
+        for m in list(self.meetings.values()):
+            n = m.meta.get("notion") or {}
+            if n.get("state") != "sent" or not n.get("id") or not m.notes() or m.id in self.sending:
+                continue
+            changed += await self.add_rows(m, existing)
+            for index, item in enumerate(m.notes().get("mine", [])):
+                if not item.get("row"):
+                    continue
+                row = existing.get(item["row"])
+                if row is None:
+                    if await notion.row_gone(self.notion, item["row"]):
+                        gone.append((m, index))
+                elif item.get("sync_error"):
+                    settled.add((m.id, index))
+                    try:
+                        await notion.set_row(self.notion, item["row"], item.get("done"), item.get("flagged"))
+                        self.set_item(m, index, False)
+                    except NotionError:
+                        pass  # still marked; the next sync tries again
+                else:
+                    if row["done"] != bool(item.get("done")):
+                        settled.add((m.id, index))
+                        self.set_done(m, index, row["done"], tick="todo")
+                        changed += 1
+                    if row["flagged"] != bool(item.get("flagged")):
+                        self.set_flagged(m, index, row["flagged"], tick="todo")
+                        changed += 1
+        return changed, gone, settled
+
     async def link_todos(self):
         """Meetings sent before follow-ups knew their to-dos: find each one's
         to-do on the page by its text. Only reads from Notion."""
         for m in list(self.meetings.values()):
             n = m.meta.get("notion") or {}
             notes = m.notes()
-            if n.get("state") != "sent" or not notes or all(i.get("notion") for i in notes.get("mine", [])):
+            if n.get("state") != "sent" or not notes or all(i.get("notion") or i.get("row") for i in notes.get("mine", [])):
                 continue
             todos = await notion.todos_on(self.notion, n["id"])
             doc = json.loads(json.dumps(notes))
@@ -1057,26 +1210,34 @@ class Sidecar:
             self.edit_wrapup(m, doc, tick=False)
 
     async def pull_ticks(self):
-        """Ticks made in Notion come back to Sidecar."""
-        await self.link_todos()
-        changed, gone = 0, []
-        for f in self.followups():
-            if not f["inNotion"]:
-                continue
-            m = self.meetings[f["meeting"]]
-            block_id = m.notes()["mine"][f["index"]].get("notion")
-            state = await notion.ticked(self.notion, block_id)
-            if state == notion.GONE:
-                gone.append((m, f["index"]))
-            elif state is not None and state != f["done"]:
-                self.set_done(m, f["index"], state, from_notion=True)
+        """What changed in Notion comes back to Sidecar."""
+        async with self.syncing:
+            await self.link_todos()
+            changed, gone, settled = await self.pull_rows()
+            # The to-dos on pages sent before the database. A row that changed
+            # just now has already said what's true.
+            before = len(gone)
+            for f in self.followups():
+                if not f["inNotion"]:
+                    continue
+                m = self.meetings[f["meeting"]]
+                block_id = m.notes()["mine"][f["index"]].get("notion")
+                if not block_id:
+                    continue
+                state = await notion.ticked(self.notion, block_id)
+                if state == notion.GONE:
+                    if (m, f["index"]) not in gone:
+                        gone.append((m, f["index"]))
+                elif state is not None and state != f["done"] and (m.id, f["index"]) not in settled:
+                    self.set_done(m, f["index"], state, tick="row")
+                    changed += 1
+            # Deleted in Notion: gone here too and from whichever of its row
+            # and to-do is left, last first so the indexes hold.
+            for at, (m, index) in sorted(enumerate(gone), key=lambda g: (g[1][0].id, -g[1][1])):
+                doc = json.loads(json.dumps(m.notes()))
+                del doc["mine"][index]
+                self.edit_wrapup(m, doc, tick="todo" if at < before else "row")
                 changed += 1
-        # Deleted in Notion: gone here too, last first so the indexes hold.
-        for m, index in sorted(gone, key=lambda g: (g[0].id, -g[1])):
-            doc = json.loads(json.dumps(m.notes()))
-            del doc["mine"][index]
-            self.edit_wrapup(m, doc, tick=False)
-            changed += 1
         if gone:
             self.broadcast(self.state())
         return changed
@@ -1442,7 +1603,7 @@ async def resume(request):
 
 async def finish(request):
     m = find(request)
-    started = await request.app["sidecar"].finish(m)
+    started = await request.app["sidecar"].finish(m, email=(await body(request)).get("email", True))
     if started is None:
         raise web.HTTPConflict(text="There's no wrap-up yet.")
     return web.json_response({"started": started, "meeting": m.summary()})
@@ -1509,6 +1670,13 @@ async def send(request):
     return web.json_response(m.summary())
 
 
+async def send_all(request):
+    taken = request.app["sidecar"].send_all((await body(request)).get("ids") or [])
+    if taken is None:
+        raise web.HTTPConflict(text="Already sending.")
+    return web.json_response({"taken": taken})
+
+
 async def note(request):
     m = find(request)
     b = await body(request)
@@ -1548,6 +1716,18 @@ async def set_followup(request):
     if not notes or not isinstance(index, int) or not 0 <= index < len(notes.get("mine", [])):
         raise web.HTTPNotFound(text="No such follow-up.")
     app.set_done(m, index, bool(b.get("done")))
+    return web.json_response({"ok": True})
+
+
+async def flag_followup(request):
+    app = request.app["sidecar"]
+    b = await body(request)
+    m = app.meetings.get(b.get("meeting"))
+    notes = m.notes() if m else None
+    index = b.get("index")
+    if not notes or not isinstance(index, int) or not 0 <= index < len(notes.get("mine", [])):
+        raise web.HTTPNotFound(text="No such follow-up.")
+    app.set_flagged(m, index, bool(b.get("flagged")))
     return web.json_response({"ok": True})
 
 
@@ -1644,6 +1824,8 @@ async def main():
     app.router.add_post("/followups/remove", remove_followup)
     app.router.add_get("/search", search)
     app.router.add_post("/followups/done", set_followup)
+    app.router.add_post("/followups/flag", flag_followup)
+    app.router.add_post("/notion/bulk", send_all)
     app.router.add_post("/followups/sync", sync_followups)
     app.router.add_get("/settings", get_settings)
     app.router.add_patch("/settings", set_settings)

@@ -3,10 +3,11 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "sidecar.js" as Sidecar
 
-// While the call goes on: what Chris has committed to, what he's been asked
-// and hasn't answered, what's decided and what's open, kept current by
-// Haiku every couple of minutes. A glance, not a read; each item jumps to
-// where it was said.
+// While the call goes on: what needs Chris right now, which is what he's been
+// asked and hasn't answered and what he's said he'd do, the latest three of
+// each, kept current by Haiku every couple of minutes. What's decided and
+// what's open stay a count until he taps for them: a glance, not a read.
+// Each item jumps to where it was said.
 Rectangle {
     id: card
     property double now: Date.now()
@@ -19,12 +20,14 @@ Rectangle {
         { key: "questions", title: qsTr("Open"), tone: ui.muted }
     ]
     readonly property int total: sections.reduce((n, s) => n + ((t[s.key] || []).length), 0)
-    // Open while there's no conversation to make room for; folded to its
-    // counts once there is, unless Chris opens or folds it himself.
-    property bool chosen: false
-    property bool chosenOpen: true
-    readonly property bool open: chosen ? chosenOpen : agent.messages.length === 0
-    function toggle() { chosenOpen = !open; chosen = true }
+    readonly property int glance: 3  // of each list, before he asks for all of it
+    // Tapped open: every list, whole. Otherwise the two that need him, or
+    // just the counts once a conversation wants the room.
+    property bool full: false
+    readonly property bool open: full || agent.messages.length === 0
+    function toggle() { full = !full }
+    readonly property var folded: sections.filter(s => !listed.includes(s))
+    readonly property var listed: !open ? [] : full ? sections : sections.filter(s => s.key === "asked" || s.key === "mine")
 
     visible: live && total > 0
     implicitHeight: column.implicitHeight + (open ? 20 : 16)
@@ -52,20 +55,20 @@ Rectangle {
                 font.bold: true
             }
             Label {
-                visible: card.open
+                visible: card.full
                 Layout.fillWidth: true
                 text: card.t.updated ? qsTr("as of %1").arg(Sidecar.clock(card.t.updated)) : ""
                 color: ui.faint
                 font.pixelSize: 10
             }
-            // Folded: how many of each, in their colors.
+            // What isn't listed: how many of each, in their colors.
             Row {
-                visible: !card.open
+                visible: !card.full
                 Layout.fillWidth: true
                 clip: true
                 spacing: 12
                 Repeater {
-                    model: card.sections
+                    model: card.folded
                     delegate: Label {
                         required property var modelData
                         readonly property int n: (card.t[modelData.key] || []).length
@@ -77,7 +80,7 @@ Rectangle {
                 }
             }
             Glyph {
-                name: card.open ? "rolldown" : "chevron"
+                name: card.full ? "rolldown" : "chevron"
                 color: ui.faint
                 font.pixelSize: 13
             }
@@ -95,15 +98,17 @@ Rectangle {
             GridLayout {
                 id: lists
                 width: parent.width
-                columns: card.width >= 620 ? Math.max(1, card.sections.filter(x => (card.t[x.key] || []).length > 0).length) : 1
+                columns: card.width >= 620 ? Math.max(1, card.listed.filter(x => (card.t[x.key] || []).length > 0).length) : 1
                 columnSpacing: 18
                 rowSpacing: 8
                 Repeater {
-                    model: card.sections
+                    model: card.listed
                     delegate: ColumnLayout {
                         id: section
                         required property var modelData
-                        readonly property var items: card.t[modelData.key] || []
+                        readonly property var every: card.t[modelData.key] || []
+                        // Most recent last, so the latest are the ones to keep.
+                        readonly property var items: card.full ? every : every.slice(-card.glance)
                         visible: items.length > 0
                         Layout.fillWidth: true
                         Layout.preferredWidth: 1
@@ -127,6 +132,12 @@ Rectangle {
                                 HoverHandler { id: itemHover; cursorShape: modelData.at >= 0 ? Qt.PointingHandCursor : Qt.ArrowCursor }
                                 TapHandler { onTapped: if (modelData.at >= 0) meetingPane.showLine(modelData.at) }
                             }
+                        }
+                        Label {
+                            visible: section.every.length > section.items.length
+                            text: qsTr("+%n earlier", "", section.every.length - section.items.length)
+                            color: ui.faint
+                            font.pixelSize: 10
                         }
                     }
                 }

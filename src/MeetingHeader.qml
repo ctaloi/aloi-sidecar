@@ -158,7 +158,7 @@ Rectangle {
                         text: qsTr("Note")
                         compact: head.compact
                         keys: "n"
-                        tip: qsTr("Type a line of your own into the transcript")
+                        tip: qsTr("Type a note of your own into the meeting")
                         onClicked: meetingPane.note()
                     }
                     KeyButton {

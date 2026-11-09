@@ -30,7 +30,14 @@ Rectangle {
     readonly property var tabs: hasNotes ? ["agent", "transcript", "notes"] : ["agent", "transcript"]
 
     function rename() { meetingHeader.rename() }
-    function note() { if (has) { tab = "transcript"; Qt.callLater(transcriptView.startNote) } }
+    // During a call the agent has its own notes box, so a note doesn't mean
+    // leaving what's on screen.
+    function note() {
+        if (!has) return
+        if (tab === "agent" && agentView.live) { agentView.startNote(); return }
+        tab = "transcript"
+        Qt.callLater(transcriptView.startNote)
+    }
     function toggleTab() { tab = tabs[(tabs.indexOf(tab) + 1) % tabs.length] }
     // From a follow-up: once the meeting's transcript has loaded, show the line.
     property int pendingLine: -1

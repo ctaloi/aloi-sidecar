@@ -62,6 +62,8 @@ void Transcript::append(const Line &line) {
     m_lines << line;
     endInsertRows();
     emit countChanged();
+    if (line.speaker == "Note")
+        emit notesChanged();
 }
 
 void Transcript::clear() {
@@ -71,6 +73,7 @@ void Transcript::clear() {
     m_lines.clear();
     endResetModel();
     emit countChanged();
+    emit notesChanged();
 }
 
 void Transcript::setLines(const QList<Line> &lines) {
@@ -78,6 +81,15 @@ void Transcript::setLines(const QList<Line> &lines) {
     m_lines = lines;
     endResetModel();
     emit countChanged();
+    emit notesChanged();
+}
+
+QVariantList Transcript::notes() const {
+    QVariantList out;
+    for (const auto &l : m_lines)
+        if (l.speaker == "Note")
+            out << QVariantMap{{"id", l.id}, {"time", l.time}, {"text", l.text}};
+    return out;
 }
 
 QString Transcript::textAfter(int id) const {
@@ -307,6 +319,11 @@ void Engine::handleEvent(const QJsonObject &event) {
         const QVariantMap call = event.value("call").toObject().toVariantMap();
         const QVariantMap settings = event.value("settings").toObject().toVariantMap();
         const int open = event.value("followups_open").toInt();
+        const QVariantMap bulk = event.value("bulk").toObject().toVariantMap();
+        if (event.contains("bulk") && bulk != m_bulk) {  // a window opened part way through Send all
+            m_bulk = bulk;
+            emit bulkChanged();
+        }
         if (on != m_listening || newMeeting || call != m_call || settings != m_settings || open != m_followupsOpen) {
             m_listening = on;
             m_current = current;
@@ -331,6 +348,9 @@ void Engine::handleEvent(const QJsonObject &event) {
             m_takeaways = event.value("takeaways").toObject().toVariantMap();
             emit wrapupChanged();
         }
+    } else if (type == "bulk") {
+        m_bulk = event.value("bulk").toObject().toVariantMap();
+        emit bulkChanged();
     } else if (type == "followups") {
         fetchFollowups();
     } else if (type == "echo_dropped") {
@@ -512,10 +532,10 @@ void Engine::merge(const QString &id, const QString &other) {
     });
 }
 
-void Engine::finish(const QString &id) {
+void Engine::finish(const QString &id, bool email) {
     QNetworkRequest request(m_url.resolved(QUrl(path(id, "/finish"))));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-    QNetworkReply *reply = m_network.post(request, QByteArray("{}"));
+    QNetworkReply *reply = m_network.post(request, QJsonDocument(QJsonObject{{"email", email}}).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, this, [this, reply, id] {
         reply->deleteLater();
         const QByteArray data = reply->readAll();
@@ -692,6 +712,22 @@ void Engine::setFollowupDone(const QString &meeting, int index, bool done) {
     }
     emit followupsChanged();
     post("/followups/done", QJsonObject{{"meeting", meeting}, {"index", index}, {"done", done}});
+}
+
+void Engine::setFollowupFlagged(const QString &meeting, int index, bool flagged) {
+    for (auto &v : m_followups) {
+        QVariantMap f = v.toMap();
+        if (f.value("meeting").toString() == meeting && f.value("index").toInt() == index) {
+            f["flagged"] = flagged;
+            v = f;
+        }
+    }
+    emit followupsChanged();
+    post("/followups/flag", QJsonObject{{"meeting", meeting}, {"index", index}, {"flagged", flagged}});
+}
+
+void Engine::sendAll(const QStringList &ids) {
+    post("/notion/bulk", QJsonObject{{"ids", QJsonArray::fromStringList(ids)}});
 }
 
 void Engine::removeFollowup(const QString &meeting, int index) {

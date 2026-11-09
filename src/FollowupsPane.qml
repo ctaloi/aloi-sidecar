@@ -4,22 +4,31 @@ import QtQuick.Layouts
 import "sidecar.js" as Sidecar
 
 // Everything Chris said he'd do, from every meeting's wrap-up, the newest
-// meeting first. Ticking one off ticks it off in the wrap-up and, for
-// meetings in Notion, on the page too; × removes it altogether, there too.
-// Ticks and deletions made in Notion come back when this opens.
+// meeting first, what's flagged above the rest. Ticking or flagging one does
+// it in the wrap-up and, for meetings in Notion, in the Follow-ups database;
+// × removes it altogether, there too. What's changed in Notion comes back
+// when this opens.
 Rectangle {
     id: root
     color: ui.window
 
     property double now: Date.now()
-    property bool showDone: false
+    // "open", "flagged" or "done".
+    property string filter: "open"
+    readonly property bool showDone: filter === "done"
     readonly property var all: engine.followups
-    readonly property var shown: all.filter(f => showDone ? f.done : !f.done)
+    readonly property var shown: all.filter(f => filter === "done" ? f.done : filter === "flagged" ? f.flagged && !f.done : !f.done)
     readonly property int doneCount: all.filter(f => f.done).length
-    // Grouped by meeting, newest first.
+    readonly property int flaggedCount: all.filter(f => f.flagged && !f.done).length
+    // Grouped by meeting, newest first; in Open, what's flagged leads, once.
     readonly property var groups: {
         const out = []
+        const pinned = filter === "open" ? shown.filter(f => f.flagged) : []
+        if (pinned.length)
+            out.push({ meeting: "", title: qsTr("Flagged"), started: 0, items: pinned })
         for (const f of shown) {
+            if (pinned.length && f.flagged)
+                continue
             if (!out.length || out[out.length - 1].meeting !== f.meeting)
                 out.push({ meeting: f.meeting, title: f.title, started: f.started, items: [] })
             out[out.length - 1].items.push(f)
@@ -32,7 +41,7 @@ Rectangle {
         if (!f.inNotion) { engine.removeFollowup(f.meeting, f.index); return }
         confirm.ask({
             title: qsTr("Remove “%1”?").arg(f.text),
-            detail: qsTr("It comes out of the wrap-up and its to-do comes off the Notion page (Notion keeps it in its trash)."),
+            detail: qsTr("It comes out of the wrap-up and out of Notion (Notion keeps it in its trash)."),
             confirm: qsTr("Remove"),
             danger: true,
             run: () => engine.removeFollowup(f.meeting, f.index)
@@ -66,7 +75,7 @@ Rectangle {
                     text: engine.syncing ? qsTr("Checking Notion") : qsTr("Check Notion")
                     busy: engine.syncing
                     enabled: !engine.syncing
-                    tip: qsTr("Bring back anything ticked off on the Notion pages")
+                    tip: qsTr("Bring back what's been ticked, flagged or deleted in Notion")
                     onClicked: engine.syncFollowups()
                 }
             }
@@ -78,16 +87,17 @@ Rectangle {
                 text: {
                     const open = root.all.length - root.doneCount
                     const meetings = new Set(root.all.filter(f => !f.done).map(f => f.meeting)).size
-                    return open === 0 ? qsTr("Nothing open. Ticks sync with Notion.")
-                                      : qsTr("%n open", "", open) + " " + qsTr("from %n meetings", "", meetings) + " · " + qsTr("ticks sync with Notion")
+                    return open === 0 ? qsTr("Nothing open. Ticks and flags sync with Notion.")
+                                      : qsTr("%n open", "", open) + " " + qsTr("from %n meetings", "", meetings) + " · " + qsTr("ticks and flags sync with Notion")
                 }
             }
             UnderlineTabs {
                 Layout.leftMargin: -10
                 Layout.topMargin: 6
                 tabs: [
-                    { label: qsTr("Open"), count: root.all.length - root.doneCount, current: !root.showDone, run: () => root.showDone = false },
-                    { label: qsTr("Done"), count: root.doneCount, current: root.showDone, run: () => root.showDone = true }
+                    { label: qsTr("Open"), count: root.all.length - root.doneCount, current: root.filter === "open", run: () => root.filter = "open" },
+                    { label: qsTr("Flagged"), count: root.flaggedCount, current: root.filter === "flagged", run: () => root.filter = "flagged" },
+                    { label: qsTr("Done"), count: root.doneCount, current: root.filter === "done", run: () => root.filter = "done" }
                 ]
             }
         }
@@ -123,15 +133,16 @@ Rectangle {
                         spacing: 10
                         Label {
                             text: group.modelData.title
-                            color: titleHover.hovered ? theme.accent : ui.muted
+                            color: group.modelData.meeting === "" ? theme.accent : titleHover.hovered ? theme.accent : ui.muted
                             font.pixelSize: 12
                             font.bold: true
                             elide: Text.ElideRight
                             Layout.maximumWidth: parent.width * 0.6
-                            HoverHandler { id: titleHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: root.openMeeting(group.modelData.meeting, -1) }
+                            HoverHandler { id: titleHover; cursorShape: group.modelData.meeting === "" ? Qt.ArrowCursor : Qt.PointingHandCursor }
+                            TapHandler { onTapped: if (group.modelData.meeting !== "") root.openMeeting(group.modelData.meeting, -1) }
                         }
                         Label {
+                            visible: group.modelData.started > 0
                             text: Sidecar.when(group.modelData.started, root.now)
                             color: ui.faint
                             font.pixelSize: 11
@@ -175,6 +186,20 @@ Rectangle {
                                     onClicked: engine.setFollowupDone(row.modelData.meeting, row.modelData.index, !row.modelData.done)
                                 }
                             }
+                            // Shows when set, or on the row's hover to set it.
+                            Glyph {
+                                Layout.alignment: Qt.AlignTop
+                                Layout.topMargin: 1
+                                name: "flag"
+                                opacity: row.modelData.flagged ? 1 : rowHover.hovered ? 0.7 : 0
+                                color: row.modelData.flagged ? theme.accent : flagHover.hovered ? ui.text : ui.faint
+                                font.pixelSize: 15
+                                HoverHandler { id: flagHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: engine.setFollowupFlagged(row.modelData.meeting, row.modelData.index, !row.modelData.flagged) }
+                                ToolTip.visible: flagHover.hovered
+                                ToolTip.delay: 400
+                                ToolTip.text: row.modelData.flagged ? qsTr("Take the flag off") : qsTr("Flag it")
+                            }
                             Label {
                                 Layout.fillWidth: true
                                 text: row.modelData.text
@@ -199,7 +224,7 @@ Rectangle {
                                 font.bold: true
                                 HoverHandler { id: errHover }
                                 ToolTip.visible: errHover.hovered
-                                ToolTip.text: qsTr("Couldn't tick it in Notion: %1").arg(row.modelData.syncError || "")
+                                ToolTip.text: qsTr("Couldn't update it in Notion: %1").arg(row.modelData.syncError || "")
                             }
                             // Same width with or without the tag, so dues line up.
                             Item {
@@ -215,7 +240,7 @@ Rectangle {
                                     HoverHandler { id: notionHover }
                                     ToolTip.visible: notionHover.hovered
                                     ToolTip.delay: 400
-                                    ToolTip.text: qsTr("A to-do on the meeting's Notion page; ticks sync")
+                                    ToolTip.text: qsTr("In Notion; ticks and flags sync")
                                 }
                             }
                             // Gone, not done.
@@ -229,7 +254,7 @@ Rectangle {
                                 TapHandler { onTapped: root.remove(row.modelData) }
                                 ToolTip.visible: removeHover.hovered
                                 ToolTip.delay: 400
-                                ToolTip.text: row.modelData.inNotion ? qsTr("Remove it, here and on the Notion page") : qsTr("Remove it")
+                                ToolTip.text: row.modelData.inNotion ? qsTr("Remove it, here and in Notion") : qsTr("Remove it")
                             }
                             Label {
                                 Layout.alignment: Qt.AlignTop
@@ -259,7 +284,7 @@ Rectangle {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
-            text: root.showDone ? qsTr("Nothing ticked off yet.") : qsTr("Nothing to follow up.")
+            text: root.filter === "done" ? qsTr("Nothing ticked off yet.") : root.filter === "flagged" ? qsTr("Nothing flagged.") : qsTr("Nothing to follow up.")
             color: ui.muted
             font.pixelSize: 15
         }
@@ -267,7 +292,7 @@ Rectangle {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
-            visible: !root.showDone
+            visible: root.filter === "open"
             text: qsTr("When a meeting ends, what you committed to shows up here.")
             color: ui.faint
             font.pixelSize: 12

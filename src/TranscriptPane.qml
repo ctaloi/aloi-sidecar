@@ -88,11 +88,13 @@ Rectangle {
 
     ListView {
         id: list
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: noteBar.top
         // A readable column in a wide window, like the agent's.
         anchors.leftMargin: Math.max(0, (pane.width - 980) / 2)
         anchors.rightMargin: Math.max(0, (pane.width - 980) / 2)
-        anchors.margins: 0
         topMargin: 14
         bottomMargin: 14
         clip: true
@@ -274,18 +276,54 @@ Rectangle {
         }
     }
 
-    // The note being typed, along the bottom.
+    // Where the transcript ends: always a frame along the bottom, saying
+    // where this is and what the keys do; the note being typed takes it over.
     Rectangle {
         id: noteBar
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: pane.noting ? 52 : 0
+        height: engine.selected === "" ? 0 : pane.noting ? 52 : 38
         visible: height > 0
         clip: true
         color: ui.panel
         Behavior on height { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
         Rectangle { width: parent.width; height: 1; color: ui.line }
+        Item {
+            id: rest
+            anchors.fill: parent
+            anchors.leftMargin: 18
+            anchors.rightMargin: 18
+            visible: !pane.noting
+            readonly property bool live: engine.selected === engine.current && engine.listening
+            Row {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 8
+                Rectangle {
+                    visible: rest.live
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 7; height: 7; radius: 3.5
+                    color: pane.following ? ui.live : ui.muted
+                }
+                Text {
+                    text: rest.live ? (pane.following ? qsTr("Following live") : qsTr("Scrolled up, still listening"))
+                        : engine.selected === engine.current ? qsTr("Paused")
+                        : qsTr("%n lines", "", transcript.count)
+                    color: ui.muted
+                    font.pixelSize: 11
+                }
+            }
+            Text {
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.StyledText
+                text: (rest.live ? "<font color='" + theme.accent + "'>m</font> " + qsTr("marks") + "&nbsp;&nbsp;&nbsp;&nbsp;" : "")
+                      + "<font color='" + theme.accent + "'>n</font> " + qsTr("adds a note")
+                      + "&nbsp;&nbsp;&nbsp;&nbsp;<font color='" + theme.accent + "'>/</font> " + qsTr("searches")
+                color: ui.faint
+                font.pixelSize: 11
+            }
+        }
         Row {
             anchors.left: parent.left
             anchors.right: parent.right
@@ -293,6 +331,7 @@ Rectangle {
             anchors.leftMargin: 18
             anchors.rightMargin: 18
             spacing: 12
+            visible: pane.noting
             Text { text: qsTr("Note"); color: theme.accent; font.pixelSize: 13; font.bold: true; anchors.verticalCenter: parent.verticalCenter; width: 56 }
             TextInput {
                 id: noteField

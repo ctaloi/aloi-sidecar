@@ -29,6 +29,14 @@ Rectangle {
         qsTr("Has anyone asked me something I haven't answered?")
     ]
     readonly property bool ready: engine.selected !== "" && !engine.loading
+    readonly property bool suggesting: over || field.activeFocus
+    // The meeting that's on: what's being said stays on screen.
+    readonly property bool live: engine.selected !== "" && engine.selected === engine.current
+    // A window too short for the cards: the call, the notes and the box are
+    // what stay. It's the window's height, not this pane's: the pane grows
+    // with its content, so going by that would flip this back and forth forever.
+    readonly property bool cramped: live && win.height < 600
+    function startNote() { liveTail.startNote() }
     function ask(text) {
         if (text.trim() === "" || !ready) return
         agent.ask(text)
@@ -146,7 +154,7 @@ Rectangle {
             Layout.fillWidth: true
             implicitHeight: intro.implicitHeight + 36
             // Only while there's nothing better to show.
-            visible: agent.messages.length === 0 && !(engine.brief.related || []).length && !engine.takeaways.updated
+            visible: !pane.live && agent.messages.length === 0 && !(engine.brief.related || []).length && !engine.takeaways.updated
             Column {
                 id: intro
                 anchors.left: parent.left
@@ -248,10 +256,11 @@ Rectangle {
             Layout.rightMargin: 14
             Layout.topMargin: 6
             // Going in, before the first question; the answers take over after.
-            visible: related.length > 0 && agent.messages.length === 0
+            visible: related.length > 0 && agent.messages.length === 0 && !pane.cramped
             onAsk: prompt => pane.ask(prompt)
         }
         TakeawaysCard {
+            visible: live && total > 0 && !pane.cramped
             Layout.fillWidth: true
             Layout.leftMargin: 14
             Layout.rightMargin: 14
@@ -262,17 +271,36 @@ Rectangle {
             Layout.leftMargin: 14
             Layout.rightMargin: 14
             Layout.topMargin: 8
+            // In a short window a conversation needs the room more.
+            visible: every.length > 0 && (agent.messages.length === 0 || pane.height >= 640) && !pane.cramped
             onLook: prompt => pane.ask(prompt)
         }
+        // During a call, what's being said: all the room there is until the
+        // first question, then a quarter of it under the answers.
+        LiveTail {
+            id: liveTail
+            live: pane.live
+            Layout.fillWidth: true
+            Layout.fillHeight: agent.messages.length === 0
+            Layout.preferredHeight: pane.height * 0.26
+            Layout.minimumHeight: 96
+            Layout.leftMargin: 18
+            Layout.rightMargin: 14
+            Layout.topMargin: 10
+            visible: pane.live
+            onOpenAll: meetingPane.tab = "transcript"
+        }
+
         // Before the first question the takeaways sit under the intro; after
-        // it, the answers take the room above them. While that room's there,
-        // what to ask sits in it, right under what's known so far, one per
-        // line with its key; when it isn't, they're chips above the box.
+        // it, the answers take the room above them. During a call what to ask
+        // stays out of the way until the box has focus (1–4 work anyway);
+        // after one it sits in the room, one per line with its key, and
+        // becomes chips above the box when there isn't room.
         Item {
             id: room
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: agent.messages.length === 0
+            visible: agent.messages.length === 0 && !pane.live
             clip: true
             // The room is what's left over, so the list inside it can't
             // change how much there is.
@@ -285,7 +313,7 @@ Rectangle {
                 anchors.rightMargin: 14
                 y: 14
                 spacing: 6
-                visible: room.fits && !agent.running
+                visible: room.fits && !agent.running && pane.suggesting
                 Label {
                     Layout.leftMargin: 2
                     text: qsTr("TRY ASKING")
@@ -334,7 +362,7 @@ Rectangle {
                 anchors.leftMargin: 14
                 anchors.rightMargin: 14
                 y: 14
-                visible: !room.fits && !agent.running
+                visible: !room.fits && !agent.running && pane.suggesting
             }
         }
 
@@ -343,9 +371,9 @@ Rectangle {
             Layout.leftMargin: 14
             Layout.rightMargin: 14
             Layout.topMargin: 6
-            // After the first question, while in the box (before it they're
-            // in the room above). 1–4 work anyway.
-            visible: !agent.running && agent.messages.length > 0 && field.activeFocus
+            // While in the box, once there's no room for them above it (a
+            // conversation, or the call itself). 1–4 work anyway.
+            visible: !agent.running && (agent.messages.length > 0 || pane.live) && field.activeFocus
         }
 
         RowLayout {

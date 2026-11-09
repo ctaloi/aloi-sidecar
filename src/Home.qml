@@ -36,7 +36,11 @@ Rectangle {
         { k: "sent", c: count("sent"), label: qsTr("in Notion"), tone: ui.them },
         { k: "skipped", c: count("skipped"), label: qsTr("no wrap-up"), tone: ui.faint }
     ]
-    readonly property var open: engine.followups.filter(f => !f.done)
+    // Flagged ones first, whichever meeting they came from.
+    readonly property var open: {
+        const o = engine.followups.filter(f => !f.done)
+        return o.filter(f => f.flagged).concat(o.filter(f => !f.flagged))
+    }
     readonly property var filed: engine.meetings.filter(m => Sidecar.stage(m) === "sent")
                                      .sort((a, b) => b.started - a.started).slice(0, 5)
 
@@ -279,7 +283,10 @@ Rectangle {
                 SectionTitle {
                     Layout.fillWidth: true
                     title: qsTr("Waiting on a wrap-up")
-                    detail: qsTr("oldest first · a does it all: Notion and the email draft")
+                    detail: qsTr("oldest first")
+                    action: engine.bulk.running ? qsTr("Sending %1 of %2").arg(Math.min((engine.bulk.done || 0) + (engine.bulk.failed || 0) + (engine.bulk.choose || []).length + 1, engine.bulk.total)).arg(engine.bulk.total)
+                          : win.sendable.length > 1 ? qsTr("Send %n to Notion", "", win.sendable.length) : ""
+                    onActionTriggered: win.act("sendAll", null)
                 }
                 GridLayout {
                     Layout.fillWidth: true
@@ -392,7 +399,8 @@ Rectangle {
                 Layout.fillWidth: true
                 spacing: 8
                 Label {
-                    text: card.k === "ready" ? (card.m.edited ? qsTr("Wrap-up edited") : qsTr("Wrap-up ready"))
+                    text: (engine.bulk.choose || []).includes(card.m.id) && card.k === "ready" ? qsTr("Pick a page")
+                        : card.k === "ready" ? (card.m.edited ? qsTr("Wrap-up edited") : qsTr("Wrap-up ready"))
                         : card.k === "drafting" ? qsTr("Drafting…")
                         : Sidecar.stage(card.m) === "draftFailed" ? qsTr("Draft failed") : qsTr("Needs a wrap-up")
                     color: Sidecar.stage(card.m) === "draftFailed" ? ui.danger : card.tone

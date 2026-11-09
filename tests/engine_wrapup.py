@@ -71,6 +71,7 @@ def main():
             failures.append(name)
 
     tmp = Path(tempfile.mkdtemp(prefix="sidecar-test-"))
+    check_tools_found_from_a_bare_path(tmp, check)
     meetings = tmp / "meetings"
     started = time.time() - 3 * 3600
     make_meeting(meetings, "2026-10-26_100000", "Call at 10:00", 1500, started)
@@ -82,6 +83,7 @@ def main():
     procs = [subprocess.Popen([PY, str(ROOT / "tests/fake/notion.py"), str(notion_port)])]
     env = {**os.environ, "SIDECAR_PORT": str(engine_port), "SIDECAR_MEETINGS": str(meetings),
            "SIDECAR_NOTION_API": f"http://127.0.0.1:{notion_port}", "SIDECAR_NOTION_TOKEN": "test",
+           "SIDECAR_NOTION_FOLLOWUPS": "",
            "SIDECAR_WRAPUP_CLAUDE": str(ROOT / "tests/fake/claude-wrapup"), "SIDECAR_CALL_WATCH": "0",
            "SIDECAR_CALENDAR": "", "SIDECAR_SETTINGS": str(tmp / "settings.json"),
            "SIDECAR_VMAIL": str(ROOT / "tests/fake/vmail"), "FAKE_VMAIL_OUT": str(tmp / "vmail.txt")}
@@ -268,6 +270,11 @@ def main():
         status, done = call(base, "POST", f"/meeting/{fourth}/finish")
         check("with a page to fill in, Do it all asks which", done["started"] == {"notion": "choose", "email": True}, done)
 
+        # Notion's the default: a new page and no email.
+        call(base, "POST", f"/meeting/{fourth}/finish", {"email": False})
+
+        check_send_all_and_rows(tmp, fake, env, check, wait)
+
         # A failed draft says why; delete moves the folder to the trash.
         check("skipping is saved", call(base, "PATCH", f"/meeting/{other}", {"skipped": True})[1]["skipped"] is True)
         status, _ = call(base, "DELETE", f"/meeting/{other}")
@@ -281,11 +288,159 @@ def main():
     sys.exit(1 if failures else 0)
 
 
+ROWS = "f011ca00-0000-4000-8000-000000000001"
+
+
+def check_send_all_and_rows(tmp, fake, env, check, wait):
+    """Send all and the Follow-ups database, on an engine of their own."""
+    folder = tmp / "bulk"
+    started = time.time() - 3 * 3600
+    ids = [f"2026-10-27_{h}0000" for h in (10, 11, 12)]
+    for i, mid in enumerate(ids):
+        make_meeting(folder, mid, f"Bulk {i}", 12, started - 5 * 86400 + i * 3600)
+    port = free_port()
+    proc = subprocess.Popen([PY, str(ROOT / "engine/engine.py")], cwd=ROOT / "engine", env={
+        **env, "SIDECAR_PORT": str(port), "SIDECAR_MEETINGS": str(folder), "SIDECAR_NOTION_FOLLOWUPS": ROWS,
+        "SIDECAR_SETTINGS": str(tmp / "settings2.json")})
+    base = f"http://127.0.0.1:{port}"
+    try:
+        wait("second engine", lambda: _up(base), 60)
+        for mid in ids[:2]:
+            call(base, "POST", f"/meeting/{mid}/wrapup")
+            wait("draft", lambda: _ready(base, mid))
+        pages_before = len(call(fake, "GET", "/_log")[1]["pages"])
+        # Pages from that day are already there: nothing is filed by guessing.
+        status, sent = call(base, "POST", "/notion/bulk", {"ids": ids})
+        check("send all takes only what's ready", status == 200 and sent["taken"] == 2, sent)
+        held = wait("held back", lambda: (lambda b: b if not b["running"] else None)(call(base, "GET", "/status")[1]["bulk"]))
+        check("a meeting with a page from that day waits to be picked",
+              sorted(held["choose"]) == ids[:2] and held["done"] == 0, held)
+        check("and nothing was filed", len(call(fake, "GET", "/_log")[1]["pages"]) == pages_before)
+
+        # Nothing else on that day: both go, in turn.
+        call(fake, "POST", "/_clear", {})
+        pages_before = len(call(fake, "GET", "/_log")[1]["pages"])
+        status, sent = call(base, "POST", "/notion/bulk", {"ids": ids})
+        wait("both filed", lambda: _notion(base, ids[1], "sent"))
+        done = wait("bulk done", lambda: (lambda b: b if not b["running"] else None)(call(base, "GET", "/status")[1]["bulk"]))
+        check("send all reports what it did", done["done"] == 2 and not done["failed"] and not done["choose"], done)
+        check("the third, with no wrap-up, is left alone", _meeting(base, ids[2]).get("notion") is None)
+
+        log = call(fake, "GET", "/_log")[1]
+        rows = {k: p for k, p in log["pages"].items() if p.get("parent") == ROWS}
+        wrote = [e for e in log["log"] if e["path"].endswith("/children") and e["method"] == "PATCH"]
+        check("follow-ups become rows", len(rows) >= 2, list(rows))
+        check("a row points at its meeting", all(p["properties"]["Meeting"]["relation"] for p in rows.values()))
+        check("no to-dos on the new pages", not any(c["type"] == "to_do" for e in wrote[-6:] for c in e["body"]["children"]))
+        check("only meeting pages and rows were made", len(log["pages"]) == pages_before + 2 + len(rows))
+
+        _, fl = call(base, "GET", "/followups")
+        one = next(f for f in fl["followups"] if f["meeting"] == ids[0])
+        check("a filed follow-up shows as in Notion", one["inNotion"] and not one["flagged"], one)
+
+        # A flag goes up, and comes back.
+        call(base, "POST", "/followups/flag", {"meeting": ids[0], "index": one["index"], "flagged": True})
+        row = _row(base, ids[0], one["index"], folder)
+        wait("the flag reaches the row", lambda: _prop(fake, row, "Flagged"))
+        _, fl = call(base, "GET", "/followups")
+        check("the flag sticks", next(f for f in fl["followups"] if f["meeting"] == ids[0])["flagged"])
+        call(fake, "POST", "/_row", {"id": row, "Flagged": False, "Done": True})
+        _, synced = call(base, "POST", "/followups/sync", {})
+        back = next(f for f in synced["followups"] if f["meeting"] == ids[0] and f["index"] == one["index"])
+        check("a flag and tick made in Notion come back", back["done"] and not back["flagged"], back)
+
+        # Syncing again makes no second row, and a save from a window that
+        # hadn't heard of the row or flag keeps them.
+        count = len([p for p in call(fake, "GET", "/_log")[1]["pages"].values() if p.get("parent") == ROWS])
+        call(base, "POST", "/followups/sync", {})
+        again = len([p for p in call(fake, "GET", "/_log")[1]["pages"].values() if p.get("parent") == ROWS])
+        check("syncing makes no second row", count == again, (count, again))
+        _, w = call(base, "GET", f"/meeting/{ids[0]}/wrapup")
+        stale = json.loads(json.dumps(w["wrapup"]["edited"]))
+        for item in stale["mine"]:
+            item.pop("row", None)
+        call(base, "PUT", f"/meeting/{ids[0]}/wrapup", {"edited": stale})
+        check("a stale save keeps the row", _row(base, ids[0], one["index"], folder) == row)
+
+        # Deleted in Notion: gone from Sidecar. A removal here reaches the row.
+        call(fake, "POST", "/_row", {"id": row, "archived": True})
+        _, synced = call(base, "POST", "/followups/sync", {})
+        check("a row deleted in Notion goes from Sidecar", not any(f["meeting"] == ids[0] and f["index"] == one["index"] and f["text"] == one["text"] for f in synced["followups"]))
+        _, fl = call(base, "GET", "/followups")
+        two = next(f for f in fl["followups"] if f["meeting"] == ids[1])
+        row2 = _row(base, ids[1], two["index"], folder)
+        call(base, "POST", "/followups/remove", {"meeting": ids[1], "index": two["index"]})
+        wait("the row is removed", lambda: call(fake, "GET", "/_log")[1]["pages"][row2].get("archived"))
+
+        # Sent before the database was shared: to-dos, then a row beside each
+        # that keeps in step with its to-do, whichever is ticked.
+        old = ids[2]
+        call(base, "POST", f"/meeting/{old}/wrapup")
+        wait("draft", lambda: _ready(base, old))
+        call(fake, "POST", "/_clear", {})
+        call(fake, "POST", "/_fail", {"rows_off": True})
+        call(base, "POST", f"/meeting/{old}/notion", {})
+        wait("filed with to-dos", lambda: _notion(base, old, "sent"))
+        item = _item(folder, old, 0)
+        check("not shared yet, follow-ups stay to-dos", item.get("notion") and not item.get("row"), item)
+        call(fake, "POST", "/_fail", {"rows_off": False})
+        call(base, "POST", "/followups/sync", {})
+        item = _item(folder, old, 0)
+        check("once shared, the follow-up gets a row and keeps its to-do", item.get("notion") and item.get("row"), item)
+        call(fake, "PATCH", f"/blocks/{item['notion']}", {"to_do": {"checked": True}})
+        _, synced = call(base, "POST", "/followups/sync", {})
+        check("a tick on the old to-do comes back", next(f for f in synced["followups"] if f["meeting"] == old and f["index"] == 0)["done"], synced)
+        wait("and reaches the row", lambda: _prop(fake, item["row"], "Done"))
+        call(fake, "POST", "/_row", {"id": item["row"], "Done": False})
+        _, synced = call(base, "POST", "/followups/sync", {})
+        check("unticking the row wins over the to-do that hasn't caught up",
+              not next(f for f in synced["followups"] if f["meeting"] == old and f["index"] == 0)["done"], synced)
+        wait("and reaches the to-do", lambda: not _checked(fake, base, item["notion"]))
+
+    finally:
+        proc.terminate()
+        proc.wait(5)
+
+
+def _item(folder, mid, index):
+    w = json.loads((folder / mid / "wrapup.json").read_text())
+    return (w.get("edited") or w["draft"])["mine"][index]
+
+
+def _checked(fake, base, block):
+    return call(fake, "GET", f"/blocks/{block}")[1]["to_do"]["checked"]
+
+
+def _meeting(base, mid):
+    return call(base, "GET", f"/meeting/{mid}/wrapup")[1]["meeting"]
+
+
+def _row(base, mid, index, folder):
+    w = json.loads((folder / mid / "wrapup.json").read_text())
+    return (w.get("edited") or w["draft"])["mine"][index].get("row")
+
+
+def _prop(fake, row, name):
+    return call(fake, "GET", "/_log")[1]["pages"][row]["properties"][name]["checkbox"]
+
+
 def _up(base):
     try:
         return call(base, "GET", "/status")[0] == 200
     except OSError:
         return False
+
+
+def check_tools_found_from_a_bare_path(tmp, check):
+    """systemd hands the engine a bare PATH; claude must still be found."""
+    wrappers = tmp / ".local/share/mise/command-wrappers/bin"
+    wrappers.mkdir(parents=True)
+    (wrappers / "claude").write_text("#!/bin/sh\n")
+    (wrappers / "claude").chmod(0o755)
+    env = {**os.environ, "HOME": str(tmp), "PATH": "/usr/local/bin:/usr/bin"}
+    out = subprocess.run([PY, "-c", "import shutil, tools; tools.extend_path(); print(shutil.which('claude'))"],
+                         env=env, cwd=ROOT / "engine", capture_output=True, text=True).stdout.strip()
+    check("claude is found from systemd's bare PATH", out == str(wrappers / "claude"), out)
 
 
 def _ready(base, mid):

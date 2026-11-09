@@ -4,21 +4,23 @@ import QtQuick.Layouts
 
 // Things said on the call worth checking (a customer, a number, a ticket, a
 // circuit), picked out with the takeaways. One click has the agent look it
-// up with Chris's skills; nothing is looked up until he clicks.
+// up with Chris's skills; nothing is looked up until he clicks. Only the two
+// latest not yet looked up show, on one line each; the rest wait behind +N.
 Flow {
     id: cards
     spacing: 8
-    readonly property var items: engine.takeaways.lookups || []
+    readonly property var every: engine.takeaways.lookups || []
     // What's been asked about, per meeting, so a card dims once it's done.
     property var asked: ({})
+    property bool showAll: false
+    readonly property int show: 2
+    readonly property var items: showAll ? every : every.filter(i => !asked[engine.selected + "|" + i.query]).slice(-show)
     signal look(string prompt)
-    visible: items.length > 0
+    visible: every.length > 0
     // Even columns across the pane, so a row of cards doesn't leave a ragged
     // gap down the right.
     readonly property int columns: Math.max(1, Math.min(items.length, Math.floor((width + spacing) / 230)))
     readonly property real cardWidth: Math.floor((width - spacing * (columns - 1)) / columns)
-
-    FontMetrics { id: whyMetrics; font.pixelSize: 11 }
 
     readonly property var kinds: ({
         customer: qsTr("customer"), number: qsTr("number"), ticket: qsTr("ticket"),
@@ -26,7 +28,9 @@ Flow {
     })
 
     Repeater {
-        model: cards.items
+        // No cards while hidden: a hidden Flow gets no width from its layout,
+        // so it would take it from the cards, which take theirs from it, for good.
+        model: cards.visible ? cards.items : []
         delegate: Rectangle {
             id: card
             required property var modelData
@@ -65,19 +69,6 @@ Flow {
                     font.bold: true
                     elide: Text.ElideRight
                 }
-                // Once a conversation's going, just what it is.
-                Text {
-                    width: parent.width
-                    visible: text !== "" && agent.messages.length === 0
-                    text: card.modelData.why
-                    color: ui.muted
-                    font.pixelSize: 11
-                    wrapMode: Text.Wrap
-                    maximumLineCount: 2
-                    elide: Text.ElideRight
-                    // Two lines' room either way, so cards side by side match.
-                    height: Math.max(implicitHeight, Math.ceil(whyMetrics.height * 2))
-                }
             }
             HoverHandler { id: hover; cursorShape: card.done ? Qt.ArrowCursor : Qt.PointingHandCursor }
             TapHandler {
@@ -92,7 +83,18 @@ Flow {
             }
             ToolTip.visible: hover.hovered && !card.done
             ToolTip.delay: 500
-            ToolTip.text: agent.messages.length > 0 && card.modelData.why ? card.modelData.why : qsTr("Have the agent look this up")
+            ToolTip.text: card.modelData.why || qsTr("Have the agent look this up")
         }
+    }
+    Text {
+        readonly property int hidden: cards.every.length - cards.items.length
+        visible: cards.showAll || hidden > 0
+        height: 24
+        verticalAlignment: Text.AlignVCenter
+        text: cards.showAll ? qsTr("Fewer") : qsTr("+%n more", "", hidden)
+        color: moreHover.hovered ? theme.accent : ui.faint
+        font.pixelSize: 11
+        HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: cards.showAll = !cards.showAll }
     }
 }

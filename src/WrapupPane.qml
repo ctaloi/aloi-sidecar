@@ -290,28 +290,17 @@ Rectangle {
                             }
                         }
                     }
-                    // Everything after the call in one click: a new Notion page
-                    // and the follow-up email saved to Outlook Drafts.
-                    KeyButton {
-                        visible: root.stage !== "sent" && root.stage !== "sending" && root.stage !== "sendFailed"
-                        primary: true
-                        implicitHeight: 30
-                        enabled: !root.drafting
-                        text: qsTr("Do it all")
-                        keys: root.width >= 620 ? "a" : ""
-                        tip: qsTr("File it in Notion as a new page and save the follow-up email to Outlook Drafts (never sent)")
-                        onClicked: win.act("finish", root.m)
-                    }
+                    // What this page is for: into Notion. The email comes after.
                     KeyButton {
                         visible: root.stage !== "sent"
-                        primary: root.stage === "sending" || root.stage === "sendFailed"
+                        primary: true
                         implicitHeight: 30
                         busy: root.stage === "sending"
                         enabled: root.stage !== "sending" && !root.drafting
                         text: root.stage === "sendFailed" ? qsTr("Try again") : root.stage === "sending" ? qsTr("Sending")
-                            : qsTr("Notion…")
-                        keys: root.stage === "sending" || root.width < 780 ? "" : "s"
-                        tip: qsTr("Send to Notion: a new page, or fill in one already there")
+                            : qsTr("Send to Notion")
+                        keys: root.stage === "sending" || root.width < 620 ? "" : "s"
+                        tip: qsTr("A new page in My Meetings; it asks first if there's a page from that day to fill in")
                         onClicked: win.act("send", root.m)
                     }
                     KeyButton {
@@ -322,10 +311,10 @@ Rectangle {
                         onClicked: win.act("notion", root.m)
                     }
                     KeyButton {
-                        visible: root.width >= 440
+                        visible: root.stage === "sent" && root.width >= 440
                         implicitHeight: 30
-                        text: qsTr("Email")
-                        tip: qsTr("Write the follow-up email, saved to Outlook Drafts (W)")
+                        text: qsTr("Follow-up email")
+                        tip: qsTr("Write the follow-up email, saved to Outlook Drafts, never sent (W)")
                         keys: root.width >= 780 ? "w" : ""
                         onClicked: win.act("email", root.m)
                     }

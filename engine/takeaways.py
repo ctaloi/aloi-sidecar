@@ -42,10 +42,10 @@ def prompt(me, title, people=()):
 Keep four short lists for him to glance at mid-call, a few words each, most recent last:
 - mine: things {me} has committed to or agreed to do.
 - asked: things he's been asked that he hasn't answered yet. Drop any he has since answered.
-- decisions: what's been decided.
-- questions: what's been raised and left open.
+- decisions: what's been decided. At most three, the ones that matter most.
+- questions: what's been raised and left open. At most three, the ones that matter most.
 
-And lookups: specific things in the call worth checking in Vaspian's systems right now, so {me} has the facts while still on the call. Vaspian is a phone company; good lookups are a customer or company named (kind "customer"), a phone number or DID read out ("number", as digits), a ticket or case number ("ticket"), a circuit or order ID ("circuit"), a person to find ("person"). "query" is what to look up, as said; "why" is a few words on what would help ("which carrier has their main number", "is it still open"). Only concrete, nameable things, at most three, the most useful first; none is fine.
+And lookups: specific things in the call worth checking in Vaspian's systems right now, so {me} has the facts while still on the call. Vaspian is a phone company; good lookups are a customer or company named (kind "customer"), a phone number or DID read out ("number", as digits), a ticket or case number ("ticket"), a circuit or order ID ("circuit"), a person to find ("person"). "query" is what to look up, as said; "why" is a few words on what would help ("which carrier has their main number", "is it still open"). Only concrete, nameable things he'd actually want in front of him mid-call, at most two, the most useful first; none is usual.
 
 And voices: for any "Voice N" whose name the call makes plain (they introduce themselves, or are greeted or answered by name, and it fits who was invited), give the voice number and their name as said. Only when it's plain; none is fine.
 
@@ -70,7 +70,7 @@ async def update(me, meta, segments, program=PROGRAM):
         raise RuntimeError(str(reply.get("result") or "no takeaways"))
     result = reply["structured_output"]
     out = {k: [i for i in result.get(k, []) if (i.get("text") or "").strip()] for k in LISTS}
-    out["lookups"] = [i for i in result.get("lookups", []) if (i.get("query") or "").strip()][:3]
+    out["lookups"] = [i for i in result.get("lookups", []) if (i.get("query") or "").strip()][:2]
     out["voices"] = [v for v in result.get("voices", []) if v.get("voice") and (v.get("name") or "").strip()]
     return out
 

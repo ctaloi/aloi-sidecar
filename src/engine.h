@@ -17,6 +17,8 @@ class Transcript : public QAbstractListModel {
     Q_PROPERTY(int count READ count NOTIFY countChanged)
     // The latest line ({speaker, who, text}), for the shaded window's ticker.
     Q_PROPERTY(QVariantMap last READ last NOTIFY countChanged)
+    // The lines Chris typed ({id, time, text}), for the Notes column.
+    Q_PROPERTY(QVariantList notes READ notes NOTIFY notesChanged)
 
 public:
     enum Role { IdRole = Qt::UserRole + 1, SpeakerRole, TextRole, TimeRole, StartRole, MineRole, RunStartRole, VoiceRole, WhoRole };
@@ -50,12 +52,14 @@ public:
         const auto &l = m_lines.last();
         return {{"speaker", l.speaker}, {"who", who(l)}, {"text", l.text}};
     }
+    QVariantList notes() const;
     // When line id was said, and its row, for jumping to it.
     Q_INVOKABLE double startOf(int id) const;
     Q_INVOKABLE int rowOf(int id) const;
 
 signals:
     void countChanged();
+    void notesChanged();
 
 private:
     QList<Line> m_lines;
@@ -113,6 +117,7 @@ class Engine : public QObject {
     Q_PROPERTY(QVariantList followups READ followups NOTIFY followupsChanged)
     Q_PROPERTY(int followupsOpen READ followupsOpen NOTIFY stateChanged)
     Q_PROPERTY(bool syncing READ syncing NOTIFY followupsChanged)
+    Q_PROPERTY(QVariantMap bulk READ bulk NOTIFY bulkChanged)
     // Meetings whose title or transcript has every word searched for, newest
     // first: [{id, title (matched), count, hits: [{at, speaker, text, time}]}].
     Q_PROPERTY(QVariantList searchResults READ searchResults NOTIFY searchChanged)
@@ -144,6 +149,7 @@ public:
     bool candidatesLoading() const { return m_candidatesLoading; }
     QString candidatesError() const { return m_candidatesError; }
     QVariantList followups() const { return m_followups; }
+    QVariantMap bulk() const { return m_bulk; }
     QVariantList searchResults() const { return m_searchResults; }
     QString searched() const { return m_searched; }
     int followupsOpen() const { return m_followupsOpen; }
@@ -170,7 +176,7 @@ public:
     // Two meetings that were one call: the earlier keeps both transcripts.
     Q_INVOKABLE void merge(const QString &id, const QString &other);
     // After a call, in one go: a new Notion page and the email in Drafts.
-    Q_INVOKABLE void finish(const QString &id);
+    Q_INVOKABLE void finish(const QString &id, bool email = true);
     // Names one of the meeting's voices (empty forgets the name).
     Q_INVOKABLE void nameVoice(const QString &id, int voice, const QString &name);
     // Move a meeting to the trash folder.
@@ -203,6 +209,9 @@ public:
     // Gone, not done: out of the wrap-up and off the Notion page.
     Q_INVOKABLE void removeFollowup(const QString &meeting, int index);
     Q_INVOKABLE void setFollowupDone(const QString &meeting, int index, bool done);
+    Q_INVOKABLE void setFollowupFlagged(const QString &meeting, int index, bool flagged);
+    // Files these in Notion one at a time; any with a page from that day wait for Chris.
+    Q_INVOKABLE void sendAll(const QStringList &ids);
     // Ticks made in Notion, brought back.
     Q_INVOKABLE void syncFollowups();
     // When the window closes: stop listening and wait (briefly) for the
@@ -229,6 +238,7 @@ signals:
     void wrapupChanged();
     void candidatesChanged();
     void followupsChanged();
+    void bulkChanged();
     void searchChanged();
     // Do it all found a page from that day to fill in: the Send sheet asks which.
     void choosePage(const QString &id);
@@ -274,6 +284,7 @@ private:
     bool m_candidatesLoading = false;
     QString m_candidatesError;
     QVariantList m_followups;
+    QVariantMap m_bulk;
     QVariantList m_searchResults;
     QString m_searched;
     QString m_searching;

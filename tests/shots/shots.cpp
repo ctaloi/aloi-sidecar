@@ -100,6 +100,36 @@ int main(int argc, char *argv[]) {
     window->setProperty("view", "meetings");
     wait(400);
     window->grabWindow().save(out + "/listening-" + size + ".png");
+    // n during a call: the box beside the live lines, on the agent tab still.
+    {
+        auto *meeting = window->findChild<QObject *>("meetingPane");
+        const int before = engine.transcript()->notes().size();
+        QMetaObject::invokeMethod(meeting, "note");
+        wait(200);
+        const auto press = [&](int key, const QString &text = {}) {
+            QKeyEvent down(QEvent::KeyPress, key, Qt::NoModifier, text);
+            QGuiApplication::sendEvent(window, &down);
+        };
+        for (const QChar c : QString("<b>Ask about the E911 address</b> & the lease"))
+            press(0, QString(c));
+        wait(100);
+        window->grabWindow().save(out + "/live-note-typing-" + size + ".png");
+        press(Qt::Key_Return);
+        for (int i = 0; i < 30 && engine.transcript()->notes().size() == before; ++i)
+            wait(100);
+        if (engine.transcript()->notes().size() != before + 1 || meeting->property("tab").toString() != "agent") {
+            std::fprintf(stderr, "A note typed during the call didn't land.\n");
+            ++warnings;
+        }
+        press(Qt::Key_Escape);
+        wait(300);
+        window->grabWindow().save(out + "/live-notes-" + size + ".png");
+    }
+    window->findChild<QObject *>("meetingPane")->setProperty("tab", "transcript");
+    wait(400);
+    window->grabWindow().save(out + "/live-transcript-" + size + ".png");
+    window->findChild<QObject *>("meetingPane")->setProperty("tab", "agent");
+    wait(200);
 
     // Rolled up to its bar; offscreen there's no Hyprland to size it, so
     // the harness does.

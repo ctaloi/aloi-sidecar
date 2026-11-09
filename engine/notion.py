@@ -1,7 +1,7 @@
 """Sending a meeting to Chris's private "My Meetings" database in Notion.
 
 The token is an internal integration's, kept in the keyring and shared with
-that one database only. Sending is built to survive being interrupted: the
+that database and the Follow-ups database beside it. Sending is built to survive being interrupted: the
 page id is saved the moment the page exists, and each batch of blocks moves a
 saved cursor forward, so trying again carries on where it stopped and never
 makes a second page.
@@ -15,6 +15,9 @@ import aiohttp
 API = os.environ.get("SIDECAR_NOTION_API", "https://api.notion.com/v1")
 VERSION = "2022-06-28"  # the version the database was read with; later ones change how databases work
 DATABASE = os.environ.get("SIDECAR_NOTION_DATABASE", "21553fc0-1092-80f5-b264-e9a451b14cee")
+# One row per follow-up, each related to its meeting's page. Until it's shared
+# with the integration (⋯ → Connections), follow-ups stay to-dos on the page.
+FOLLOWUPS = os.environ.get("SIDECAR_NOTION_FOLLOWUPS", "40f53fc0-1092-8187-80c2-fd2f15fc115b")
 BATCH = 100  # Notion's most children per request
 TEXT = 1900  # under Notion's 2,000 characters per rich-text item
 HEADING = "Sidecar notes"  # what Sidecar's part of a page it fills in sits under
@@ -73,11 +76,12 @@ def duration(meta):
     return f"{minutes} min" if minutes < 60 else f"{minutes // 60} h {minutes % 60:02d} min"
 
 
-def body(w, refs=None):
+def body(w, refs=None, todos=True):
     """The page's sections, in the shape the database's other pages have
-    (TL;DR, then Topics), with the follow-ups as to-dos. refs, if given, is
-    filled in parallel: the index of Chris's follow-up each to-do is, else
-    None, so the to-dos' block ids can be kept for ticking them off later."""
+    (TL;DR, then Topics), with the follow-ups as to-dos unless they're rows in
+    the Follow-ups database (todos=False). refs, if given, is filled in
+    parallel: the index of Chris's follow-up each to-do is, else None, so the
+    to-dos' block ids can be kept for ticking them off later."""
     out = []
     if w["tldr"] or w["summary"]:
         out.append(block("heading_2", "TL;DR"))
@@ -95,7 +99,7 @@ def body(w, refs=None):
     def due(i):
         return f" ({i['due']})" if i.get("due") else ""
 
-    if w["mine"]:
+    if w["mine"] and todos:
         out.append(block("heading_2", "My follow-ups"))
         start = len(out)
         out += [block("to_do", i["text"] + due(i), checked=bool(i.get("done"))) for i in w["mine"]]
@@ -217,8 +221,10 @@ class Notion:
         progress = dict(meta.get("notion") or {})
         options = await self.options()
         props = self.properties(meta, w, options)
+        # Decided once per page, so a resumed send lays out the same sections.
+        rows = progress.get("rows", False) if progress.get("id") else await followups_ready(self)
         refs = {}
-        sections = body(w, refs)
+        sections = body(w, refs, todos=not rows)
         lines = transcript(segments)
         lead = 0  # blocks put before Sidecar's own when filling in a page
 
@@ -240,7 +246,7 @@ class Notion:
                                                           "properties": props})
                 progress = {"id": page["id"], "url": page.get("url", ""), "filled": False}
             progress.update({"state": "sending", "sections": 0, "lines": 0, "toggle": None,
-                             "total": len(sections), "todos": {}})
+                             "total": len(sections), "todos": {}, "rows": rows})
             save(progress)
         elif progress.get("filled"):
             sections = [{"object": "block", "type": "divider", "divider": {}},
@@ -298,6 +304,74 @@ async def tick(notion, block_id, done):
 
 
 GONE = "gone"
+
+
+# ---- the Follow-ups database ----
+
+async def followups_ready(notion):
+    """Whether the integration can reach the Follow-ups database."""
+    if not FOLLOWUPS:
+        return False
+    try:
+        await notion.call("GET", f"/databases/{FOLLOWUPS}")
+    except NotionError:
+        return False
+    return True
+
+
+async def rows(notion):
+    """Every row: {id: {text, done, flagged, meeting}}, in one paged query
+    rather than a read per follow-up. Raises if any page can't be read, so a
+    short answer is never taken to mean rows were deleted."""
+    out, cursor = {}, None
+    while True:
+        query = {"page_size": 100}
+        if cursor:
+            query["start_cursor"] = cursor
+        data = await notion.call("POST", f"/databases/{FOLLOWUPS}/query", query)
+        for page in data.get("results", []):
+            p = page.get("properties", {})
+            out[page["id"]] = {"text": plain(p.get("Task", {}).get("title")),
+                               "done": bool(p.get("Done", {}).get("checkbox")),
+                               "flagged": bool(p.get("Flagged", {}).get("checkbox")),
+                               "meeting": [r["id"].replace("-", "") for r in p.get("Meeting", {}).get("relation", [])]}
+        if not data.get("has_more"):
+            return out
+        cursor = data.get("next_cursor")
+
+
+async def add_row(notion, item, page_id, started):
+    page = await notion.call("POST", "/pages", {"parent": {"database_id": FOLLOWUPS}, "properties": {
+        "Task": {"title": text(item["text"])},
+        "Done": {"checkbox": bool(item.get("done"))},
+        "Flagged": {"checkbox": bool(item.get("flagged"))},
+        "Due": {"rich_text": text(item.get("due", ""))},
+        "Said": {"date": {"start": iso(started)}},
+        "Meeting": {"relation": [{"id": page_id}]}}})
+    return page["id"]
+
+
+async def set_row(notion, row_id, done, flagged):
+    await notion.call("PATCH", f"/pages/{row_id}", {"properties": {
+        "Done": {"checkbox": bool(done)}, "Flagged": {"checkbox": bool(flagged)}}})
+
+
+async def row_gone(notion, row_id):
+    """Whether a row missing from the query was really deleted in Notion."""
+    try:
+        page = await notion.call("GET", f"/pages/{row_id}")
+    except NotionError as e:
+        return e.status == 404
+    return bool(page.get("archived") or page.get("in_trash"))
+
+
+async def remove_row(notion, row_id):
+    """Takes one row out of the Follow-ups database (to Notion's trash)."""
+    try:
+        await notion.call("PATCH", f"/pages/{row_id}", {"archived": True})
+    except NotionError as e:
+        if e.status != 404:
+            raise
 
 
 async def ticked(notion, block_id):
