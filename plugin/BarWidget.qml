@@ -98,7 +98,8 @@ Panel {
     dimmed: root.sidecar.connected === false
     tooltipText: root.tooltip
 
-    // The dot: a ring when idle, solid red while listening.
+    // The dot: a ring when idle, solid red while listening. Steady, never
+    // pulsing: a pulse redraws every bar on every monitor for the whole call.
     Rectangle {
       anchors.centerIn: parent
       width: Style.space(9)
@@ -107,13 +108,6 @@ Panel {
       color: root.listening ? Commons.Color.urgent : "transparent"
       border.width: root.listening ? 0 : Math.max(1, Style.space(1.5))
       border.color: Qt.darker(button.foreground, 1.35)
-      SequentialAnimation on opacity {
-        running: root.listening
-        loops: Animation.Infinite
-        onRunningChanged: if (!running) parent.opacity = 1
-        NumberAnimation { to: 0.35; duration: 900; easing.type: Easing.InOutSine }
-        NumberAnimation { to: 1; duration: 900; easing.type: Easing.InOutSine }
-      }
     }
     // Left: the panel. Right: listen, or stop, right away.
     onPressed: function(mouseButton) {
