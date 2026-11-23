@@ -5,7 +5,7 @@ const path = require("node:path")
 
 const root = path.join(__dirname, "..")
 const catalog = JSON.parse(fs.readFileSync(path.join(root, "i18n/en.json"), "utf8"))
-const sources = ["MeetingsContent.qml", "BarWidget.qml"].map(f => fs.readFileSync(path.join(root, f), "utf8"))
+const sources = ["RecorderContent.qml", "BarWidget.qml"].map(f => fs.readFileSync(path.join(root, f), "utf8"))
 
 test("every string the plugin shows exists in en.json", () => {
   const used = new Set()

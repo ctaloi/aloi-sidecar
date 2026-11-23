@@ -1,35 +1,58 @@
-"""Chris's calendar, from the bar plugin's helper. (Named agenda.py so it
+"""Chris's calendar, from Aloi Calendar's engine. (Named agenda.py so it
 doesn't shadow the standard library's calendar module.)
 
-The helper (plugin/bin/aloi-meetings, Sidecar's own bar plugin) already
-signs in to Microsoft 365 and shapes today's meetings; the engine asks it, so
-there's one sign-in and one idea of what "today" holds. From that Sidecar
-knows what a call is called and who's in it, offers to listen a couple of
-minutes before a meeting, and notices when the next one begins.
+Aloi Calendar keeps the one copy of Outlook (through vmail's sign-in), so
+Sidecar asks it for today's meetings rather than signing in to Microsoft
+itself. From those Sidecar knows what a call is called and who's in it,
+offers to listen a couple of minutes before a meeting, and notices when the
+next one begins. Without Aloi Calendar, calls are named by their window.
 """
 import asyncio
 import difflib
 import json
 import os
+import shutil
 import time
 from datetime import datetime
 from pathlib import Path
 
-REFRESH = 5 * 60  # seconds between asking Microsoft 365
+REFRESH = 60  # seconds between asking Aloi Calendar (a local read; it keeps Outlook current)
 LEAD = 2 * 60  # how long before a meeting the "about to start" offer comes
 SLACK = 5 * 60  # a call this close to a meeting's start counts as that meeting
 JOIN = 10 * 60  # a call starting later than this into a slot is something else (the window's name still matches)
-CANDIDATES = [
-    Path(__file__).resolve().parent.parent / "plugin/bin/aloi-meetings",
-    Path.home() / ".config/omarchy/plugins/aloi.sidecar/bin/aloi-meetings",
-]
 
 
 def helper():
+    """Aloi Calendar's engine, or SIDECAR_CALENDAR (a stand-in for tests;
+    empty turns the calendar off)."""
     override = os.environ.get("SIDECAR_CALENDAR")
     if override is not None:
-        return override or None  # empty turns the calendar off (tests)
-    return next((str(p) for p in CANDIDATES if p.exists()), None)
+        return override or None
+    return shutil.which("aloi-calendar-engine")
+
+
+def from_engine(o):
+    """One of Aloi Calendar's Outlook occurrences as Sidecar keeps a
+    calendar event (the shape Microsoft's own fields had)."""
+    if o.get("all_day"):
+        start, end = o.get("start_date", "") + "T00:00:00Z", o.get("end_date", "") + "T00:00:00Z"
+    else:
+        start, end = o.get("start", ""), o.get("end", "")
+    return {
+        "id": (o.get("id") or "").removeprefix("outlook:"),
+        "subject": (o.get("title") or "").strip(),
+        "start": start, "end": end,
+        "allDay": bool(o.get("all_day")),
+        "cancelled": False,  # Aloi Calendar leaves cancelled meetings out
+        "showAs": (o.get("show_as") or "").lower(),
+        "response": (o.get("response") or "").lower(),
+        "organizer": o.get("organizer") or "",
+        "attendees": [{"name": a.get("name") or a.get("email", ""), "email": a.get("email", "")}
+                      for a in o.get("attendees") or []],
+        "joinUrl": o.get("join_url") or "",
+        "webLink": o.get("web_link") or "",
+        "location": (o.get("location") or "").strip(),
+    }
 
 
 def epoch(iso):
@@ -62,19 +85,21 @@ class Calendar:
     async def refresh(self):
         if not self.program:
             return
+        day = datetime.now().date().isoformat()
         try:
-            proc = await asyncio.create_subprocess_exec(self.program, "today", stdout=asyncio.subprocess.PIPE,
-                                                        stderr=asyncio.subprocess.DEVNULL)
-            out, _ = await asyncio.wait_for(proc.communicate(), 60)
-            reply = json.loads(out or b"{}")
+            proc = await asyncio.create_subprocess_exec(
+                self.program, "query", "--from", day, "--days", "1", "--calendar", "outlook", "--json",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            out, err = await asyncio.wait_for(proc.communicate(), 60)
+            reply = json.loads(out or b"null")
         except (OSError, asyncio.TimeoutError, json.JSONDecodeError) as e:
             self.error = str(e) or type(e).__name__
             return
-        if "events" not in reply:
-            self.error = reply.get("error", "no events")  # signed out, offline: keep the last good day
+        if not isinstance(reply, list):
+            self.error = (err or b"").decode(errors="replace").strip() or "no events"  # keep the last good day
             return
         events = []
-        for e in reply["events"]:
+        for e in map(from_engine, reply):
             e = {**e, "t0": epoch(e.get("start")), "t1": epoch(e.get("end"))}
             if counts(e):
                 events.append(e)

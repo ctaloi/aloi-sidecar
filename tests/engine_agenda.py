@@ -35,9 +35,19 @@ def main():
         {"id": "g", "subject": "Late call", "start": iso(now + 4000), "end": iso(now + 5000), "showAs": "busy", "response": "accepted"},
         {"id": "f", "subject": "Holiday", "start": iso(now - 9999), "end": iso(now + 9999), "allDay": True},
     ]
+    # As Aloi Calendar's engine answers `query --calendar outlook --json`.
+    def engine_shape(e):
+        o = {"id": "outlook:" + e["id"], "calendar": "outlook", "title": e["subject"], "all_day": bool(e.get("allDay")),
+             "show_as": e.get("showAs", ""), "response": e.get("response", ""), "organizer": e.get("organizer", ""),
+             "join_url": e.get("joinUrl", ""), "attendees": e.get("attendees", []), "read_only": False}
+        if o["all_day"]:
+            o["start_date"], o["end_date"] = e["start"][:10], e["end"][:10]
+        else:
+            o["start"], o["end"] = e["start"], e["end"]
+        return o
     tmp = Path(tempfile.mkdtemp(prefix="sidecar-agenda-"))
-    fake = tmp / "aloi-meetings"
-    fake.write_text("#!/bin/sh\ncat <<'JSON'\n" + json.dumps({"day": "x", "events": events}) + "\nJSON\n")
+    fake = tmp / "aloi-calendar-engine"
+    fake.write_text("#!/bin/sh\n[ \"$1\" = query ] || exit 2\ncat <<'JSON'\n" + json.dumps([engine_shape(e) for e in events]) + "\nJSON\n")
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
     os.environ["SIDECAR_CALENDAR"] = str(fake)
     import agenda

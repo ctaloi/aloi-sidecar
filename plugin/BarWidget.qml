@@ -8,25 +8,19 @@ import qs.Ui
 import "Model.js" as Model
 import "Registry.js" as Registry
 
-// A quiet calendar icon in the bar that becomes your next meeting's title
-// once it's within half an hour, and stays while the meeting runs. Like
-// Omarchy's own panels, the widget itself is the Panel. Click for today's
-// meetings; right-click to join the one in the bar.
+// A recording dot: a quiet ring while Sidecar isn't listening, solid red
+// (breathing) while it is. The calendar itself lives in the clock now (Aloi
+// Calendar); this is only whether Sidecar is listening. Like Omarchy's own
+// panels, the widget itself is the Panel: click for the meeting on now or
+// next (join, listen) and Sidecar's controls; right-click joins the meeting
+// that's on.
 Panel {
   id: root
   moduleName: "aloi.sidecar"
 
   property var service: null
-  readonly property string phase: service ? service.phase : "starting"
-  readonly property var match: service ? service.match : null
   readonly property int maxTitle: Number(setting("maxTitleLength", 28))
-  readonly property bool showWhenIdle: String(setting("showWhenIdle", true)) !== "false"
-
-  // Soon enough to get up for: the last five minutes, and the first one in.
-  readonly property bool urgent: match !== null && (match.phase === "starting" || (match.phase === "soon" && match.minutes <= 5))
-  readonly property bool joinable: match !== null && (match.event.joinUrl || "") !== ""
-  // Aloi Sidecar listening to a call: the bar says so, in red, with how long.
-  readonly property var sidecar: service ? service.sidecar : ({})
+  readonly property var sidecar: service ? service.sidecar : ({ connected: false })
   readonly property bool listening: !!sidecar.listening
 
   Commons.Translations { id: strings; directory: Qt.resolvedUrl("i18n") }
@@ -44,30 +38,12 @@ Panel {
     return t("time.hoursMinutes", { h: d.hours, m: d.minutes })
   }
 
-  function titleOf(event) {
-    var title = event.subject || (event.private ? t("event.private") : t("event.untitled"))
-    return Model.shortTitle(title, root.maxTitle)
-  }
-
-  readonly property string label: {
-    if (listening) {
-      var minutes = Math.max(0, Math.floor(((service ? service.now : Date.now()) - sidecar.started) / 60000))
-      return t("bar.listening", { title: Model.shortTitle(sidecar.title || t("event.untitled"), root.maxTitle), time: span(minutes) })
-    }
-    if (!match) return ""
-    var title = titleOf(match.event)
-    if (match.phase === "soon") return t("bar.in", { title: title, time: span(match.minutes) })
-    if (match.phase === "starting") return t("bar.starting", { title: title })
-    return t("bar.left", { title: title, time: span(match.minutes) })
-  }
-
+  // What the dot means, said on hover.
   readonly property string tooltip: {
-    if (listening) return t("bar.tooltipListening")
-    if (phase === "signedOut") return t("bar.tooltipSignedOut")
-    if (phase === "signingIn") return t("bar.tooltipSigningIn")
-    if (!match) return t("bar.tooltip")
-    var e = match.event
-    return (e.subject || t("event.untitled")) + (joinable ? "\n" + t("bar.tooltipJoin") : "")
+    if (sidecar.connected === false) return t("bar.tooltipOffline")
+    if (!listening) return t("bar.tooltip")
+    var minutes = Math.max(0, Math.floor(((service ? service.now : Date.now()) - sidecar.started) / 60000))
+    return t("bar.listening", { title: Model.shortTitle(sidecar.title || t("event.untitled"), root.maxTitle), time: span(minutes) })
   }
 
   function bindService() {
@@ -108,31 +84,40 @@ Panel {
   function close() { root.controller.hide() }
   function toggle() { if (root.opened) root.close(); else root.open() }
 
-  function quickAction() {
-    if (root.service && root.joinable) root.service.joinCurrent()
-    else root.toggle()
-  }
-
-  visible: root.label !== "" || root.showWhenIdle || root.opened
-  implicitWidth: visible ? button.implicitWidth : 0
+  implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
-
-  Behavior on implicitWidth {
-    NumberAnimation { duration: Style.duration(180); easing.type: Easing.OutCubic }
-  }
 
   WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.listening ? "●  " + root.label : root.label !== "" ? "󰃭  " + root.label : "󰃭"
-    active: root.urgent || root.listening
-    activeColor: root.listening ? Commons.Color.urgent : Commons.Color.accent
-    dimmed: root.phase === "signedOut" || root.phase === "consent" || root.phase === "keyring"
+    text: ""
+    labelVisible: false
+    hasVisualContent: true
+    fixedWidth: Style.space(26)
+    dimmed: root.sidecar.connected === false
     tooltipText: root.tooltip
+
+    // The dot: a ring when idle, solid red while listening.
+    Rectangle {
+      anchors.centerIn: parent
+      width: Style.space(9)
+      height: width
+      radius: width / 2
+      color: root.listening ? Commons.Color.urgent : "transparent"
+      border.width: root.listening ? 0 : Math.max(1, Style.space(1.5))
+      border.color: Qt.darker(button.foreground, 1.35)
+      SequentialAnimation on opacity {
+        running: root.listening
+        loops: Animation.Infinite
+        onRunningChanged: if (!running) parent.opacity = 1
+        NumberAnimation { to: 0.35; duration: 900; easing.type: Easing.InOutSine }
+        NumberAnimation { to: 1; duration: 900; easing.type: Easing.InOutSine }
+      }
+    }
+    // Left: the panel. Right: listen, or stop, right away.
     onPressed: function(mouseButton) {
-      if (mouseButton === Qt.RightButton) root.quickAction()
-      else if (mouseButton === Qt.MiddleButton) { if (root.service) root.service.refresh() }
+      if (mouseButton === Qt.RightButton) { if (root.service) root.service.toggleListening() }
       else root.toggle()
     }
   }
@@ -144,10 +129,10 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: content.keyCatcher
-    contentWidth: popup.fittedContentWidth(Style.space(400))
-    contentHeight: popup.fittedContentHeight(content.implicitHeight, Style.space(640))
+    contentWidth: popup.fittedContentWidth(Style.space(380))
+    contentHeight: popup.fittedContentHeight(content.implicitHeight, Style.space(240))
 
-    MeetingsContent {
+    RecorderContent {
       id: content
       anchors.fill: parent
       host: root
@@ -160,14 +145,12 @@ Panel {
     function open(): void { root.open() }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
-    function refresh(): void { if (root.service) root.service.refresh() }
-    function join(): string { return root.service && root.service.joinCurrent() ? "joining" : "nothing to join" }
-    function signIn(): void { if (root.service) root.service.signIn() }
+    function listen(): void { if (root.service && !root.listening) root.service.toggleListening() }
+    function stop(): void { if (root.service && root.listening) root.service.stopListening() }
     function status(): string {
       if (!root.service) return "starting"
       var sc = root.service.sidecar || {}
-      return root.phase + (root.label !== "" ? " " + root.label : "")
-             + (sc.connected ? " · sidecar " + (sc.listening ? "listening" : "idle") + ", " + sc.toWrapUp + " to wrap up" : " · sidecar offline")
+      return sc.connected ? (sc.listening ? "listening: " + sc.title : "idle") + ", " + sc.toWrapUp + " to wrap up" : "sidecar offline"
     }
   }
 }
