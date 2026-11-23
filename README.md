@@ -21,6 +21,8 @@ Claude Code.
   something I haven't answered?", or "look up their numbers": the agent
   gets the lines said since your last question and can use your skills
   (Vaspian One, Silhouette, mail and calendar, Notion, Telescope…).
+  The live call opens on the transcript. **Ask AI** opens a translucent
+  panel over it, and Esc brings the transcript back into focus.
 - **Every meeting has edges.** It starts when you listen (Space) or start
   one (ctrl+n), pauses with Space, and ends with e. Nothing is merged into a
   meeting by time. Each is a folder in `~/.local/share/aloi-sidecar/meetings/`
@@ -29,6 +31,31 @@ Claude Code.
 - **Opens on Home**, as every Aloi app opens on what's waiting on you: the
   meeting that's on, with its switches; the meetings waiting on a wrap-up,
   oldest first; what you said you'd do; and what went to Notion lately.
+- **What we've learned**, on Home under what's waiting: the wrap-ups taken
+  together, over two weeks, thirty days or all of them. How many meetings
+  and hours, a bar a day; the topics as a map (the wrap-ups' tags: a dot as
+  big as the meetings it came up in, lit if it came up this week, joined to
+  the topics it comes up with); and beside the map the last few
+  conversations and what they came to, or, pointing at a topic, what came
+  up under it, what was decided and what's still open. Under that, the
+  latest decisions and open questions (each opens its meeting at that
+  line), and who the meetings were with. Nothing is asked of a model for
+  it: the engine counts what the wrap-ups already say (`GET /learned`).
+- **Into a topic.** A click on a topic (on the map, or anywhere its name
+  is a pill) opens its own page, all the way back: every meeting under it,
+  newest first, with what it came to and what came up; what you still owe
+  under it, what was decided, what's open and what others said they'd do;
+  and the topics it comes up with, each a click away. A meeting opens to
+  its notes, and `esc` comes back to the topic (`GET /topic?name=`).
+- **A few lines isn't a meeting.** One that ends with fewer than ten lines
+  (`SIDECAR_MIN_LINES`), and no note, mark or wrap-up of yours, goes
+  straight to the trash folder (`~/.local/share/aloi-sidecar/trash/`)
+  instead of waiting on a wrap-up.
+- **Waiting on a wrap-up is a row, not a wall.** Home shows the newest few
+  and folds the rest behind one line; a meeting drops off by itself after a
+  week. Tick the ready ones to send only those to Notion, or send them all.
+
+  ![What we've learned: the topic map with a topic pinned](docs/home-topic-1440x900.png)
   `g h` comes back to it. Sidecar is built from Aloi UI (`~/Work/aloi-ui`),
   so its bar, buttons, palette and keys are the same as Tix's and ntfy's.
 - **Go back to any meeting.** The list on the left has every meeting, live
@@ -65,18 +92,20 @@ Claude Code.
   takeaways and Notion use the names.
 - **Notion and the email together (`A`).** From the menu or palette: a new
   Notion page and the follow-up email in Outlook Drafts, in one go.
-- **It records calls by itself.** When another app (Teams, Zoom, a browser
-  tab) holds the mic for more than a few seconds, Sidecar starts listening
-  straight away, named from the call app's window and your calendar, and a
-  notification offers **Not now**, which stops and discards it. When the
-  call lets go of the mic the meeting ends half a minute later unless you
-  click Not now. Dictation (Superwhisper) doesn't count. Turn it off in the
-  settings menu (⋯ at the top).
+- **It records calls by itself, and says so only in the bar.** When
+  another app (Teams, Zoom, a browser tab) holds the mic for more than a
+  few seconds, Sidecar starts listening straight away, named from the call
+  app's window and your calendar. Nothing pops up: the bar item turns red
+  with the meeting's name and how long it's run. When the call lets go of
+  the mic the meeting ends half a minute later (longer if the other side is
+  still talking), and after eight minutes of nothing said. A call not worth
+  keeping is deleted afterwards; one of only a few lines goes by itself.
+  Dictation (Superwhisper) doesn't count. Turn it off in the settings menu
+  (⋯ at the top).
 - **It knows your calendar.** Through its Microsoft 365 sign-in, a call is
-  named after the meeting it is, with who was invited. Two minutes before
-  a meeting a notification offers **Join and listen**; when the next
-  meeting begins while another is still being heard, it offers to switch
-  (and does, after a minute).
+  named after the meeting it is, with who was invited. When the next
+  meeting begins while one that's over is still being heard, it moves on
+  to the new one after a minute; an overlapping one carries on.
 - **In the bar.** Sidecar's bar item (`plugin/`, once Aloi Meetings) shows
   the next meeting half an hour out and today's list with Join. It turns
   red with the elapsed time while Sidecar listens, and its panel has Join
@@ -92,9 +121,8 @@ Claude Code.
   rows in the Follow-ups database in Notion, each linked to its meeting;
   ticks and flags go both ways, and deleting a row deletes the follow-up.
   Meetings sent before the database keep their to-dos, which stay in step.
-- **No listening to dead air.** After five minutes with nothing said, a
-  notification asks if the call's still on; unanswered and still quiet, the
-  meeting ends three minutes later.
+- **No listening to dead air.** After five minutes with nothing said and
+  three more still quiet, the meeting ends by itself.
 
 ## Nothing changes by itself
 
@@ -140,7 +168,8 @@ goes back. A capital is Shift (`C` is Shift+C); `g h` is g, then h.
 | `w` | Write the follow-up email, saved to Outlook Drafts (never sent) |
 | `c` / `C` | Copy the wrap-up as Markdown / the transcript |
 | `x` | No wrap-up needed (or needed after all) |
-| `>` | Ask about the meeting on screen |
+| `>` | Ask about the meeting on screen, or the live call from Home |
+| `ctrl+shift+a` | Open Ask AI for the live call |
 | `1`–`4` | Ask a suggested question |
 | `ctrl+a` | (in the ask box) The next question goes across all meetings |
 | `y` / `n` | Allow / deny what the agent wants to run |
@@ -176,9 +205,8 @@ goes back. A capital is Shift (`C` is Shift+C); `g h` is g, then h.
   integration token from the keyring: `secret-tool lookup service
   aloi-sidecar account notion`), and watches PipeWire for calls
   (`engine/calls.py`). Settings live in `~/.config/aloi-sidecar/settings.json`.
-  `http://127.0.0.1:8777` is a plain web view with a direct Claude ask box,
-  kept as a fallback (it uses the key linked at
-  `~/.config/aloi-sidecar/api-key`).
+  It has no API key and no web page: every model call is `claude -p` on
+  your login, and the app is the only way in.
 - `src/` is the app: C++ and Qt Quick, following the Omarchy theme live,
   with the agent and its approvals (the `--approve` hook asks the open
   window over D-Bus, as `dev.ctaloi.Sidecar`).
@@ -193,6 +221,7 @@ it's missing.
 bin/build      # build/aloi-sidecar
 bin/test       # unit tests, then the window offscreen at three sizes
 engine/.venv/bin/python tests/engine_wrapup.py   # wrap-up and Send against a fake Claude and Notion
+engine/.venv/bin/python tests/engine_insights.py # what Home's map and digest are counted from
 bin/shots      # screenshots into docs/, against the stand-in engine and Claude
 bin/install    # the engine's environment, models and service, then the package
 bin/install-plugin   # the bar item, linked from plugin/

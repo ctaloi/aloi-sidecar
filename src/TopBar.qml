@@ -48,7 +48,7 @@ Rectangle {
             visible: bar.width >= 1100
             hint: ""
             scopes: [
-                { key: "home", label: qsTr("Home"), glyph: "home", keys: "g h", current: win.view === "home",
+                { key: "home", label: qsTr("Home"), glyph: "home", keys: "g h", current: win.view === "home" || win.view === "topic",
                   tip: qsTr("What's on, and what's waiting on you") },
                 { key: "meetings", label: qsTr("Meetings"), glyph: "meetings", keys: "g m", current: win.view === "meetings",
                   count: win.waiting.length,
@@ -161,12 +161,6 @@ Rectangle {
                     setting: true
                     on: engine.settings.watch_calls !== false
                     onTriggered: engine.setSetting("watch_calls", !(engine.settings.watch_calls !== false))
-                }
-                MenuRow {
-                    text: qsTr("Offer to listen before calendar meetings")
-                    setting: true
-                    on: engine.settings.calendar_offers !== false
-                    onTriggered: engine.setSetting("calendar_offers", !(engine.settings.calendar_offers !== false))
                 }
                 MenuRow {
                     text: qsTr("Live takeaways during calls (Haiku)")

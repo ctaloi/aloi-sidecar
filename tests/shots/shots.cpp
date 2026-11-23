@@ -97,12 +97,57 @@ int main(int argc, char *argv[]) {
     QDir().mkpath(out);
     // Home first, where it opens; then the meeting that's on.
     window->grabWindow().save(out + "/home-" + size + ".png");
+    // Further down Home: what's been learned, the map first, then with a
+    // topic pinned, then what was decided and what's open.
+    {
+        auto *flick = window->findChild<QQuickItem *>("homeFlick");
+        auto *learned = window->findChild<QQuickItem *>("learned");
+        if (!flick || !learned || learned->property("topics").toList().isEmpty()) {
+            std::fprintf(stderr, "Home has nothing learned to show.\n");
+            ++warnings;
+        } else {
+            const auto scroll = [&](qreal y) {
+                const qreal most = flick->property("contentHeight").toReal() - flick->height();
+                flick->setProperty("contentY", qMax<qreal>(0, qMin(y, most)));
+            };
+            scroll(learned->y() - 8);
+            wait(300);
+            window->grabWindow().save(out + "/home-learned-" + size + ".png");
+            learned->setProperty("pinned", learned->property("topics").toList().first().toMap().value("name"));
+            wait(300);
+            window->grabWindow().save(out + "/home-topic-" + size + ".png");
+            learned->setProperty("pinned", QString());
+            scroll(learned->y() + learned->height() - flick->height() + 40);
+            wait(300);
+            window->grabWindow().save(out + "/home-decided-" + size + ".png");
+            scroll(0);
+            wait(100);
+            // Into a topic: its own page, then esc back home.
+            const QString name = learned->property("topics").toList().first().toMap().value("name").toString();
+            QMetaObject::invokeMethod(window, "openTopic", Q_ARG(QVariant, name));
+            for (int i = 0; i < 30 && engine.topic().value("count").toInt() == 0; ++i)
+                wait(100);
+            wait(300);
+            window->grabWindow().save(out + "/topic-" + size + ".png");
+            if (window->property("view").toString() != "topic" || engine.topic().value("meetings").toList().isEmpty()) {
+                std::fprintf(stderr, "The topic's page didn't open with its meetings.\n");
+                ++warnings;
+            }
+            QMetaObject::invokeMethod(window, "goHome");
+            wait(200);
+        }
+    }
     window->setProperty("view", "meetings");
     wait(400);
     window->grabWindow().save(out + "/listening-" + size + ".png");
+    auto *meeting = window->findChild<QObject *>("meetingPane");
+    if (meeting->property("tab").toString() != "transcript") {
+        std::fprintf(stderr, "The live call didn't open on the transcript.\n");
+        ++warnings;
+    }
     // n during a call: the box beside the live lines, on the agent tab still.
     {
-        auto *meeting = window->findChild<QObject *>("meetingPane");
+        meeting->setProperty("tab", "agent");
         const int before = engine.transcript()->notes().size();
         QMetaObject::invokeMethod(meeting, "note");
         wait(200);
@@ -160,10 +205,42 @@ int main(int argc, char *argv[]) {
         std::printf("answer: %s\n", qPrintable(agent.messages().last().toMap().value("text").toString()));
         return 0;
     }
-    agent.ask("Has anyone asked me something I haven't answered?");
+    meeting->setProperty("tab", "transcript");
+    auto *liveAsk = window->findChild<QObject *>("liveAsk");
+    auto *askButton = window->findChild<QQuickItem *>("askLiveButton");
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                      askButton->mapToScene(QPointF(askButton->width() / 2, askButton->height() / 2)).toPoint());
+    wait(350);
+    auto *input = window->activeFocusItem();
+    const QString question = "Has anyone asked me something I haven't answered?";
+    if (!liveAsk->property("visible").toBool() || !input || !input->inherits("QQuickTextInput")) {
+        std::fprintf(stderr, "Ask AI didn't open with the question field focused.\n");
+        ++warnings;
+    } else {
+        window->grabWindow().save(out + "/live-ask-" + size + ".png");
+        agent.setWide(true);
+        input->setProperty("text", question);
+        QTest::keyClick(window, Qt::Key_Return);
+    }
     for (int i = 0; i < 100 && agent.running(); ++i)
         wait(100);
     wait(500);
+    const auto messages = agent.messages();
+    if (agent.meeting() != engine.current() || agent.wide() || messages.size() != 2
+        || messages.first().toMap().value("text").toString() != question
+        || messages.last().toMap().value("text").toString().isEmpty()) {
+        std::fprintf(stderr, "Ask AI didn't answer in the live meeting's conversation.\n");
+        ++warnings;
+    }
+    window->grabWindow().save(out + "/live-ask-answer-" + size + ".png");
+    QTest::keyClick(window, Qt::Key_Escape);
+    wait(250);
+    if (liveAsk->property("visible").toBool() || meeting->property("tab").toString() != "transcript") {
+        std::fprintf(stderr, "Esc didn't close Ask AI and return to the transcript.\n");
+        ++warnings;
+    }
+    meeting->setProperty("tab", "agent");
+    wait(200);
     window->grabWindow().save(out + "/answer-" + size + ".png");
 
     // A past meeting, opened to review.
@@ -172,6 +249,19 @@ int main(int argc, char *argv[]) {
         wait(100);
     wait(500);
     window->grabWindow().save(out + "/review-" + size + ".png");
+    QTest::keyClick(window, Qt::Key_A, Qt::ControlModifier | Qt::ShiftModifier);
+    wait(250);
+    if (!liveAsk->property("visible").toBool() || engine.selected() != engine.current()
+        || agent.messages() != messages) {
+        std::fprintf(stderr, "The live Ask AI shortcut didn't reopen the call's conversation from a past meeting.\n");
+        ++warnings;
+    }
+    engine.select("past-0");
+    wait(250);
+    if (liveAsk->property("visible").toBool()) {
+        std::fprintf(stderr, "Ask AI stayed open after the transcript changed meetings.\n");
+        ++warnings;
+    }
 
     // The rest of a meeting's life: its transcript, its menu, sending it,
     // one already in Notion, one being drafted, and a call noticed.
@@ -294,6 +384,11 @@ int main(int argc, char *argv[]) {
                 return found;
         return nullptr;
     };
+    // The follow-ups are near the foot of Home now: scroll down to them.
+    if (auto *flick = window->findChild<QQuickItem *>("homeFlick")) {
+        flick->setProperty("contentY", qMax<qreal>(0, flick->property("contentHeight").toReal() - flick->height()));
+        wait(200);
+    }
     QQuickItem *tick = find(window->contentItem());
     expect("a tick box on Home's follow-ups", tick);
     if (tick) {
@@ -302,6 +397,32 @@ int main(int argc, char *argv[]) {
         wait(300);
         expect("the tick to check the follow-up off", open() == before - 1);
         expect("the tick to stay on Home", view() == "home");
+        QMetaObject::invokeMethod(keyRoot, "forceActiveFocus");
+    }
+    // Send all, as Chris would: asked, confirmed, and the bar along the
+    // bottom says how far it's got and what came of it. (It did nothing at
+    // all once: the action was dropped before it reached the engine.)
+    {
+        QObject *confirmBox = window->findChild<QObject *>("confirm");
+        QObject *bar = window->findChild<QObject *>("bulkBar");
+        QMetaObject::invokeMethod(window, "act", Q_ARG(QVariant, QStringLiteral("sendAll")), Q_ARG(QVariant, QVariant()));
+        wait(200);
+        expect("Send all to ask first", confirmBox && confirmBox->property("visible").toBool());
+        QMetaObject::invokeMethod(confirmBox, "accept");
+        for (int i = 0; i < 30 && !engine.bulk().value("running").toBool(); ++i)
+            wait(50);
+        expect("Send all to reach the engine", engine.bulk().value("running").toBool());
+        expect("the bar to show while it sends", bar && bar->property("shown").toBool() && bar->property("running").toBool());
+        wait(300);
+        window->grabWindow().save(out + "/sending-" + size + ".png");
+        for (int i = 0; i < 80 && engine.bulk().value("running").toBool(); ++i)
+            wait(100);
+        wait(300);
+        expect("the send to finish", !engine.bulk().value("running").toBool() && engine.bulk().value("done").toInt() >= 1);
+        expect("the bar to stay and say what came of it", bar && bar->property("shown").toBool());
+        window->grabWindow().save(out + "/sending-done-" + size + ".png");
+        bar->setProperty("closed", true);
+        wait(100);
         QMetaObject::invokeMethod(keyRoot, "forceActiveFocus");
     }
     press("/");

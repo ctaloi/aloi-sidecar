@@ -9,8 +9,10 @@ import QtQuick.Layouts
 // beyond a lookup waits here for his Allow.
 Rectangle {
     id: pane
-    color: ui.panel
+    color: quickAsk ? "transparent" : ui.panel
 
+    property bool quickAsk: false
+    signal dismissRequested()
     property alias input: field
     // In the middle of a wide window the conversation keeps to a readable
     // column instead of running edge to edge.
@@ -29,7 +31,7 @@ Rectangle {
         qsTr("Has anyone asked me something I haven't answered?")
     ]
     readonly property bool ready: engine.selected !== "" && !engine.loading
-    readonly property bool suggesting: over || field.activeFocus
+    readonly property bool suggesting: quickAsk || over || field.activeFocus
     // The meeting that's on: what's being said stays on screen.
     readonly property bool live: engine.selected !== "" && engine.selected === engine.current
     // A window too short for the cards: the call, the notes and the box are
@@ -39,6 +41,10 @@ Rectangle {
     function startNote() { liveTail.startNote() }
     function ask(text) {
         if (text.trim() === "" || !ready) return
+        if (quickAsk) {
+            if (agent.running || !engine.listening || engine.selected !== engine.current) return
+            agent.wide = false
+        }
         agent.ask(text)
         field.text = ""
         list.stick = true
@@ -154,7 +160,8 @@ Rectangle {
             Layout.fillWidth: true
             implicitHeight: intro.implicitHeight + 36
             // Only while there's nothing better to show.
-            visible: !pane.live && agent.messages.length === 0 && !(engine.brief.related || []).length && !engine.takeaways.updated
+            visible: !pane.quickAsk && !pane.live && agent.messages.length === 0
+                     && !(engine.brief.related || []).length && !engine.takeaways.updated
             Column {
                 id: intro
                 anchors.left: parent.left
@@ -256,11 +263,11 @@ Rectangle {
             Layout.rightMargin: 14
             Layout.topMargin: 6
             // Going in, before the first question; the answers take over after.
-            visible: related.length > 0 && agent.messages.length === 0 && !pane.cramped
+            visible: !pane.quickAsk && related.length > 0 && agent.messages.length === 0 && !pane.cramped
             onAsk: prompt => pane.ask(prompt)
         }
         TakeawaysCard {
-            visible: live && total > 0 && !pane.cramped
+            visible: !pane.quickAsk && live && total > 0 && !pane.cramped
             Layout.fillWidth: true
             Layout.leftMargin: 14
             Layout.rightMargin: 14
@@ -272,7 +279,7 @@ Rectangle {
             Layout.rightMargin: 14
             Layout.topMargin: 8
             // In a short window a conversation needs the room more.
-            visible: every.length > 0 && (agent.messages.length === 0 || pane.height >= 640) && !pane.cramped
+            visible: !pane.quickAsk && every.length > 0 && (agent.messages.length === 0 || pane.height >= 640) && !pane.cramped
             onLook: prompt => pane.ask(prompt)
         }
         // During a call, what's being said: all the room there is until the
@@ -287,7 +294,7 @@ Rectangle {
             Layout.leftMargin: 18
             Layout.rightMargin: 14
             Layout.topMargin: 10
-            visible: pane.live
+            visible: !pane.quickAsk && pane.live
             onOpenAll: meetingPane.tab = "transcript"
         }
 
@@ -300,7 +307,7 @@ Rectangle {
             id: room
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: agent.messages.length === 0 && !pane.live
+            visible: agent.messages.length === 0 && (pane.quickAsk || !pane.live)
             clip: true
             // The room is what's left over, so the list inside it can't
             // change how much there is.
@@ -337,7 +344,7 @@ Rectangle {
                             anchors.leftMargin: 10
                             anchors.rightMargin: 12
                             spacing: 10
-                            KeyCap { text: index + 1; tone: starterMouse.containsMouse ? theme.accent : ui.faint }
+                            KeyCap { visible: !pane.quickAsk; text: index + 1; tone: starterMouse.containsMouse ? theme.accent : ui.faint }
                             Text {
                                 Layout.fillWidth: true
                                 text: modelData
@@ -373,7 +380,7 @@ Rectangle {
             Layout.topMargin: 6
             // While in the box, once there's no room for them above it (a
             // conversation, or the call itself). 1–4 work anyway.
-            visible: !agent.running && (agent.messages.length > 0 || pane.live) && field.activeFocus
+            visible: !pane.quickAsk && !agent.running && (agent.messages.length > 0 || pane.live) && field.activeFocus
         }
 
         RowLayout {
@@ -387,19 +394,21 @@ Rectangle {
                 id: field
                 Layout.fillWidth: true
                 enabled: pane.ready
-                placeholderText: agent.running ? qsTr("Answering…") : agent.wide ? qsTr("Ask across all your meetings")
+                readOnly: pane.quickAsk && agent.running
+                placeholderText: agent.running ? qsTr("Answering…") : !pane.quickAsk && agent.wide ? qsTr("Ask across all your meetings")
                                : pane.over ? qsTr("Ask about this meeting") : qsTr("Ask about the call")
                 Material.roundedScale: theme.radius
                 font.pixelSize: 14
                 onAccepted: pane.ask(text)
-                placeholderTextColor: agent.wide ? theme.accent : ui.faint
+                placeholderTextColor: !pane.quickAsk && agent.wide ? theme.accent : ui.faint
                 Keys.onPressed: event => {
-                    if (event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier) && text === "") {
+                    if (!pane.quickAsk && event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier) && text === "") {
                         agent.wide = !agent.wide; event.accepted = true
                     }
                 }
                 Keys.onEscapePressed: {
-                    if (agent.running) agent.stop()
+                    if (pane.quickAsk) pane.dismissRequested()
+                    else if (agent.running) agent.stop()
                     else focus = false
                 }
             }
@@ -407,12 +416,14 @@ Rectangle {
                 text: agent.running ? qsTr("Stop") : qsTr("Ask")
                 glyph: agent.running ? "stop" : "send"
                 primary: !agent.running
+                enabled: !pane.quickAsk || agent.running || (pane.ready && field.text.trim() !== "")
                 implicitHeight: field.height - 8
                 onClicked: agent.running ? agent.stop() : pane.ask(field.text)
             }
         }
         // What the keys do here, as under every Aloi agent's box.
         Label {
+            visible: !pane.quickAsk
             Layout.leftMargin: 18
             Layout.bottomMargin: 10
             Layout.topMargin: -6
@@ -444,7 +455,7 @@ Rectangle {
                     anchors.centerIn: parent
                     width: Math.min(implicitWidth, chipRow.width - 20)
                     elide: Text.ElideRight
-                    text: (index + 1) + "  " + modelData
+                    text: pane.quickAsk ? modelData : (index + 1) + "  " + modelData
                     color: chipMouse.containsMouse ? ui.text : ui.muted
                     font.pixelSize: 11
                 }

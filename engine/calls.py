@@ -212,39 +212,5 @@ class CallWatch:
             await asyncio.sleep(3)  # PipeWire restarted; follow it back
 
 
-async def notify(title, body, actions, timeout=60):
-    """A desktop notification with buttons; returns the chosen action's
-    name, or None if it was dismissed or timed out. Clicking the
-    notification itself picks "default". Cancelling takes it off screen."""
-    args = ["notify-send", "--app-name=Aloi Sidecar", "--icon=aloi-sidecar", "--print-id",
-            f"--expire-time={timeout * 1000}"]
-    args += [f"--action={name}={label}" for name, label in actions]
-    try:
-        proc = await asyncio.create_subprocess_exec(*args, title, body, stdout=asyncio.subprocess.PIPE,
-                                                    stderr=asyncio.subprocess.DEVNULL)
-    except FileNotFoundError:
-        return None
-    nid, choice = None, None
-    try:
-        async with asyncio.timeout(timeout + 5):
-            async for raw in proc.stdout:
-                line = raw.decode().strip()
-                if line.isdigit() and nid is None:
-                    nid = line
-                elif line:
-                    choice = line
-        await proc.wait()
-        return choice
-    except (asyncio.TimeoutError, asyncio.CancelledError):
-        proc.kill()
-        if nid:
-            await run("gdbus", "call", "--session", "--dest", "org.freedesktop.Notifications",
-                      "--object-path", "/org/freedesktop/Notifications",
-                      "--method", "org.freedesktop.Notifications.CloseNotification", nid)
-        if asyncio.current_task().cancelling():
-            raise
-        return None
-
-
 def enabled():
     return os.environ.get("SIDECAR_CALL_WATCH", "1") != "0"

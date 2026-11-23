@@ -17,7 +17,10 @@ EFFORT = os.environ.get("SIDECAR_WRAPUP_EFFORT", "medium")
 PROGRAM = os.environ.get("SIDECAR_WRAPUP_CLAUDE", "claude")  # a stand-in in tests
 WORKSPACE = Path.home() / ".local/state/aloi-sidecar/wrapup"
 TIMEOUT = 300
-MIN_LINES = 8  # fewer than this and a meeting ending doesn't draft by itself
+# Fewer lines than this and a meeting isn't one: a test, a wrong number, the
+# mic caught for a moment. It goes to the trash folder when it ends, rather
+# than wait on a wrap-up.
+MIN_LINES = int(os.environ.get("SIDECAR_MIN_LINES", 10))
 
 ITEM = {"type": "object", "additionalProperties": False,
         "properties": {"text": {"type": "string"}, "due": {"type": "string"}, "at": {"type": "integer"}},

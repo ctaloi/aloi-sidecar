@@ -39,7 +39,7 @@ ApplicationWindow {
 
     readonly property bool typing: activeFocusItem !== null
         && (activeFocusItem instanceof TextInput || (activeFocusItem instanceof TextEdit && !activeFocusItem.readOnly))
-    readonly property bool overlayOpen: palette.visible || confirm.visible || sendSheet.visible || emailSheet.visible
+    readonly property bool overlayOpen: palette.visible || confirm.visible || sendSheet.visible || emailSheet.visible || liveAsk.visible
     readonly property bool idle: !typing && !overlayOpen
     readonly property var shown: engine.selectedMeeting
     readonly property string stage: Sidecar.stage(shown)
@@ -50,7 +50,12 @@ ApplicationWindow {
     readonly property var sendable: waiting.filter(m => ["ready", "sendFailed"].includes(Sidecar.stage(m)))
     // Home, a meeting, or every follow-up across them (g h, g m, g f).
     property string view: "home"
-    function goHome() { setShaded(false); view = "home" }
+    function goHome() { setShaded(false); viaTopic = false; view = "home" }
+    // A topic's own page: every meeting under it and what they came to.
+    readonly property string topicName: engine.topic.name || ""
+    // The meeting on screen was opened from the topic: esc goes back to it.
+    property bool viaTopic: false
+    function openTopic(name) { setShaded(false); viaTopic = false; engine.fetchTopic(name); view = "topic" }
     function showScope(key) { setShaded(false); view = key }
     function showKeys() { palette.open(true) }
     function focusSearch() { if (listFits) listHidden = false; topBar.focusSearch() }
@@ -59,9 +64,28 @@ ApplicationWindow {
     function back() {
         if (topBar.search.text !== "") { topBar.search.text = ""; return }
         if (agent.running) { agent.stop(); return }
+        if (view === "meetings" && viaTopic) { viaTopic = false; view = "topic"; return }
         if (view !== "home") goHome()
     }
-    function askAgent() { showAgent(); meetingPane.agentPane.input.forceActiveFocus() }
+    function askAgent(question) {
+        showAgent()
+        const input = meetingPane.agentPane.input
+        if (question !== undefined) {
+            input.text = question
+            input.cursorPosition = question.length
+        }
+        input.forceActiveFocus()
+    }
+    readonly property bool canAskLive: engine.listening && engine.current !== ""
+    function askLive(question) {
+        if (!canAskLive) return
+        if (engine.selected !== engine.current) engine.select(engine.current)
+        liveAsk.openForCall(engine.current, question)
+    }
+    function askAboutMeeting(question) {
+        if (canAskLive && (view === "home" || engine.selected === engine.current)) askLive(question)
+        else askAgent(question)
+    }
     function quit() {
         if (!engine.listening) { Qt.quit(); return }
         confirm.ask({
@@ -72,6 +96,7 @@ ApplicationWindow {
         })
     }
     function openFrom(id, at) {
+        viaTopic = false
         view = "meetings"
         if (width < 1100) topBar.search.text = ""  // the results stood in for the meeting; it's back
         engine.select(id)
@@ -125,7 +150,7 @@ ApplicationWindow {
     // Something waiting for an Allow can't wait behind another tab.
     Connections {
         target: agent
-        function onApprovalsChanged() { if (agent.approvals.length > 0) win.showAgent() }
+        function onApprovalsChanged() { if (agent.approvals.length > 0 && !liveAsk.visible) win.showAgent() }
     }
 
     // M: flag the moment in the meeting that's on.
@@ -148,6 +173,18 @@ ApplicationWindow {
     // Everything that can be done with a meeting, from its menu, its
     // buttons or the keys, in one place.
     function act(what, m) {
+        // Not about one meeting: everything ready, or only the ones ticked on Home ({ids}).
+        if (what === "sendAll") {
+            const ids = m && m.ids ? m.ids : win.sendable.map(o => o.id)
+            if (!ids.length || engine.bulk.running) return
+            confirm.ask({
+                title: qsTr("Send %n wrap-ups to Notion?", "", ids.length),
+                detail: qsTr("Each becomes a new page, as drafted or as you edited it. Any with a page from that day stay here for you to pick. The bar along the bottom says how far it's got."),
+                confirm: qsTr("Send"),
+                run: () => { bulkBar.asked = true; engine.sendAll(ids) }
+            })
+            return
+        }
         if (!m || !m.id) return
         const id = m.id
         switch (what) {
@@ -206,17 +243,6 @@ ApplicationWindow {
         case "choosePage": {
             const notes = id === engine.selected && engine.wrapup ? (engine.wrapup.edited || engine.wrapup.draft || {}) : {}
             sendSheet.open(m, notes.title || m.title)
-            break
-        }
-        case "sendAll": {
-            const ids = win.sendable.map(o => o.id)
-            if (!ids.length || engine.bulk.running) return
-            confirm.ask({
-                title: qsTr("Send %n wrap-ups to Notion?", "", ids.length),
-                detail: qsTr("Each becomes a new page, as drafted or as you edited it. Any with a page from that day stay here for you to pick."),
-                confirm: qsTr("Send"),
-                run: () => engine.sendAll(ids)
-            })
             break
         }
         case "revert":
@@ -294,7 +320,7 @@ ApplicationWindow {
             win.setShaded(false)
             win.raise()
             win.requestActivate()
-            if (action === "ask") { win.showAgent(); meetingPane.agentPane.input.forceActiveFocus() }
+            if (action === "ask") win.askAboutMeeting()
             else if (action === "toggle") engine.toggleListening()
         }
     }
@@ -381,7 +407,9 @@ ApplicationWindow {
         { id: "revert", show: "", seqs: [], group: qsTr("Wrap-up"), label: qsTr("Go back to Opus's draft"),
           enabled: () => over && !!shown.edited && stage !== "sent", run: () => act("revert", shown) },
         { id: "ask", show: ">", seqs: [">"], group: qsTr("Agent"), label: qsTr("Ask the agent about this meeting"),
-          enabled: () => hasMeeting, run: askAgent },
+          enabled: () => hasMeeting || canAskLive, run: () => askAboutMeeting() },
+        { id: "askLive", show: "ctrl+shift+a", seqs: ["Ctrl+Shift+A"], always: true, group: qsTr("Agent"),
+          label: qsTr("Ask about the live call"), enabled: () => canAskLive, run: () => askLive() },
         { id: "wide", show: "", seqs: [], group: qsTr("Agent"), label: qsTr("Ask across all meetings"),
           run: () => { agent.wide = true; askAgent() } },
         { id: "allow", show: "y", seqs: ["Y"], group: qsTr("Agent"), label: qsTr("Allow what the agent asks to run"),
@@ -419,7 +447,6 @@ ApplicationWindow {
             label: (st[key] !== false ? qsTr("Turn off: %1") : qsTr("Turn on: %1")).arg(label),
             run: () => engine.setSetting(key, !(st[key] !== false)) })
         flip("watch_calls", qsTr("record calls by itself"))
-        flip("calendar_offers", qsTr("offers before calendar meetings"))
         flip("live_takeaways", qsTr("live takeaways"))
         flip("stop_on_silence", qsTr("end after a long silence"))
         out.push({ group: qsTr("Settings"), show: "",
@@ -431,6 +458,10 @@ ApplicationWindow {
                                           run: () => openFrom(x.id, -1) }))
         return out
     }
+
+    // Sending several to Notion: how far it's got, in every view, and what
+    // came of it until it's waved away.
+    footer: BulkBar { id: bulkBar; objectName: "bulkBar"; visible: shown && !win.shaded }
 
     header: Item {
         implicitHeight: win.shaded ? miniBar.implicitHeight : topBar.implicitHeight
@@ -500,6 +531,11 @@ ApplicationWindow {
                     visible: win.view === "home"
                     now: win.now
                 }
+                TopicPane {
+                    objectName: "topicPane"
+                    anchors.fill: parent
+                    visible: win.view === "topic"
+                }
                 FollowupsPane {
                     anchors.fill: parent
                     visible: win.view === "followups"
@@ -560,8 +596,9 @@ ApplicationWindow {
     // Over the whole window, the bar too, as in every Aloi app.
     SendSheet { id: sendSheet; objectName: "sendSheet"; parent: Overlay.overlay; anchors.fill: parent; z: 40 }
     EmailSheet { id: emailSheet; objectName: "emailSheet"; parent: Overlay.overlay; anchors.fill: parent; z: 41 }
+    LiveAsk { id: liveAsk; objectName: "liveAsk"; z: 42 }
     CommandPalette { id: palette; objectName: "palette"; parent: Overlay.overlay; anchors.fill: parent; z: 44; actions: win.actions; more: win.paletteMore }
-    ConfirmOverlay { id: confirm; parent: Overlay.overlay; anchors.fill: parent; z: 45 }
+    ConfirmOverlay { id: confirm; objectName: "confirm"; parent: Overlay.overlay; anchors.fill: parent; z: 45 }
 
     // The single keys stay out of the way while you type or an overlay is up.
     Repeater {

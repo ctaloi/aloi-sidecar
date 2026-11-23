@@ -5,7 +5,7 @@ import "sidecar.js" as Sidecar
 
 // The meeting under its header, as tabs: the agent, where a call is worked;
 // the transcript, what's being said underneath; and once it's over, the
-// notes it came to. A call opens on the agent, a finished meeting on its
+// notes it came to. A call opens on its transcript, a finished meeting on its
 // notes when it has them.
 Rectangle {
     id: pane
@@ -24,10 +24,14 @@ Rectangle {
     property string tab: "agent"
     readonly property bool hasNotes: over && stage !== "none" && stage !== "skipped"
     // Chosen once the meeting's stage has caught up with the switch.
-    onMChanged: if (m.id !== shownId) { shownId = m.id || ""; Qt.callLater(() => tab = hasNotes ? "notes" : "agent") }
+    onMChanged: {
+        if (m.id === shownId) return
+        shownId = m.id || ""
+        Qt.callLater(() => tab = hasNotes ? "notes" : live ? "transcript" : "agent")
+    }
     onHasNotesChanged: if (!hasNotes && tab === "notes") tab = "agent"
     property string shownId: ""
-    readonly property var tabs: hasNotes ? ["agent", "transcript", "notes"] : ["agent", "transcript"]
+    readonly property var tabs: hasNotes ? ["transcript", "agent", "notes"] : ["transcript", "agent"]
 
     function rename() { meetingHeader.rename() }
     // During a call the agent has its own notes box, so a note doesn't mean
@@ -70,10 +74,10 @@ Rectangle {
                 Layout.fillHeight: true
                 tabs: {
                     const out = [
-                        { label: qsTr("Agent"), current: pane.tab === "agent", keys: "t", run: () => pane.tab = "agent",
-                          dot: agent.running || agent.approvals.length > 0 },
                         { label: pane.live ? qsTr("Live transcript") : qsTr("Transcript"), count: pane.isCurrent ? transcript.count : (pane.m.lines || 0),
-                          current: pane.tab === "transcript", keys: "t", run: () => pane.tab = "transcript" }
+                          current: pane.tab === "transcript", keys: "t", run: () => pane.tab = "transcript" },
+                        { label: qsTr("Agent"), current: pane.tab === "agent", keys: "t", run: () => pane.tab = "agent",
+                          dot: agent.running || agent.approvals.length > 0 }
                     ]
                     if (pane.hasNotes)
                         out.push({ label: qsTr("Notes"), current: pane.tab === "notes", keys: "t", run: () => pane.tab = "notes",
@@ -101,6 +105,17 @@ Rectangle {
                 text: qsTr("New chat")
                 implicitHeight: 28
                 onClicked: agent.forget()
+            }
+            KeyButton {
+                objectName: "askLiveButton"
+                visible: pane.live && pane.tab === "transcript"
+                text: qsTr("Ask AI")
+                glyph: "spark"
+                keys: ">"
+                busy: agent.running
+                primary: true
+                implicitHeight: 30
+                onClicked: win.askLive()
             }
         }
 

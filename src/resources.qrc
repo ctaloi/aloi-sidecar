@@ -1,9 +1,16 @@
 <RCC>
     <qresource prefix="/">
         <file>Main.qml</file>
+        <file>Learned.qml</file>
+        <file>BulkBar.qml</file>
+        <file>Ledger.qml</file>
+        <file>TopicPane.qml</file>
+        <file>TopicMap.qml</file>
+        <file>topicmap.js</file>
         <file>Colors.qml</file>
         <file>TranscriptPane.qml</file>
         <file>AgentPane.qml</file>
+        <file>LiveAsk.qml</file>
         <file>MeetingHeader.qml</file>
         <file>LookupCards.qml</file>
         <file>BriefCard.qml</file>

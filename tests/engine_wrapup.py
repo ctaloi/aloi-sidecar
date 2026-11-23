@@ -78,6 +78,7 @@ def main():
     make_meeting(meetings, "2026-10-26_120000", "Northwind", 12, started + 7200)
     make_meeting(meetings, "2026-10-26_140000", "Harbor", 12, started + 14400)
     make_meeting(meetings, "2026-10-26_160000", "Belmont", 12, started + 21600)
+    make_meeting(meetings, "2026-10-26_170000", "Call at 5:00", 3, started + 25200)  # too short to be one
 
     engine_port, notion_port = free_port(), free_port()
     procs = [subprocess.Popen([PY, str(ROOT / "tests/fake/notion.py"), str(notion_port)])]
@@ -92,6 +93,12 @@ def main():
     try:
         wait("engine", lambda: _up(base), 60)
         mid = "2026-10-26_100000"
+
+        # A few lines and nothing done with them isn't a meeting.
+        _, listed = call(base, "GET", "/meetings")
+        check("a meeting of a few lines is taken off the list", "2026-10-26_170000" not in [m["id"] for m in listed], listed)
+        check("and kept in the trash folder", (tmp / "trash/2026-10-26_170000/transcript.jsonl").exists())
+        check("one with enough lines stays", "2026-10-26_120000" in [m["id"] for m in listed])
 
         # Recovered meetings never draft by themselves.
         status, w = call(base, "GET", f"/meeting/{mid}/wrapup")

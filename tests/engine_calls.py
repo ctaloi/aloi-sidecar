@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """What a call does on its own: the mic going hot starts a meeting named from
-the call app's window and the calendar, Not now throws it away, and the call
-ending ends the meeting unless Not now keeps it. Nothing is recorded: the
-recorders and notifications are stand-ins.
+the call app's window and the calendar, and the call ending ends the meeting,
+all without a notification. Nothing is recorded: the recorders are stand-ins.
 
     engine/.venv/bin/python tests/engine_calls.py
 """
@@ -21,6 +20,10 @@ sys.path.insert(0, str(ROOT / "engine"))
 import calls  # noqa: E402
 import engine  # noqa: E402
 
+# These meetings are a line or two long: the rule that trashes short ones
+# (tests/engine_wrapup.py covers it) is off here.
+engine.Sidecar.too_short = lambda self, m: False
+
 failures = []
 
 
@@ -31,17 +34,10 @@ def check(name, ok):
 
 
 async def main():
-    answers = []  # what each notification gets: an action name, or None for no answer
-    shown = []
-
-    async def notify(title, body, actions, timeout=60):
-        shown.append((title, body, [a for a, _ in actions]))
-        return answers.pop(0) if answers else None
-
     async def context():
         return {"app": "Teams", "title": "Weekly sync"}
 
-    calls.notify, calls.context = notify, context
+    calls.context = context
     engine.END_AFTER = 0.2
     app = engine.Sidecar()
 
@@ -52,69 +48,54 @@ async def main():
         app.listening = on
     app.set_listening = set_listening
 
-    # Mic goes hot, nobody answers: it's recording, named from the window.
-    answers[:] = [None]
+    # Mic goes hot: it's recording, named from the window, and says nothing.
+    check("nothing pops up any more", not hasattr(calls, "notify"))
     await app.call_started("Teams")
-    await app.prompt
+    await app.pending
     check("a hot mic starts a meeting by itself", app.listening and app.current is not None)
     check("named from the Teams window", app.current.meta["title"] == "Weekly sync")
-    check("the notification offers Not now", "discard" in shown[-1][2] and "Recording" in shown[-1][0])
 
-    # The call ends, nobody answers: it ends by itself.
+    # The call ends: it ends by itself.
     m = app.current
     m.append({"speaker": "Them", "start": 1, "end": 2, "text": "Thanks, bye."})
-    answers[:] = [None]
     await app.call_ended("Teams")
-    await app.prompt
+    await app.pending
     check("the call ending ends the meeting by itself", app.current is None and m.meta["state"] == "ended")
 
     # The other side still talking after the mic lets go (a mute, a headset
     # switch): the call isn't over, so it keeps going.
-    answers[:] = [None]
     await app.call_started("Teams")
-    await app.prompt
+    await app.pending
     m4 = app.current
-    answers[:] = [None]
     await app.call_ended("Teams")
     await asyncio.sleep(0.05)
     m4.append({"speaker": "Them", "start": time.time(), "end": time.time() + 1, "text": "Sorry, I was on mute."})
     await asyncio.sleep(0.3)
     check("someone still talking keeps it going", app.current is m4 and app.listening)
-    await app.prompt
+    await app.pending
     check("and it ends once they've gone quiet", app.current is None)
 
-    # Not now on the end notification keeps it going.
-    answers[:] = [None]
+    # The call coming back before the half minute is up keeps the same meeting.
     await app.call_started("Teams")
-    await app.prompt
+    await app.pending
     m2 = app.current
-    answers[:] = ["keep"]
     await app.call_ended("Teams")
-    await app.prompt
-    await asyncio.sleep(0.3)
-    check("Not now keeps the meeting going", app.current is m2 and app.listening)
+    await app.call_started("Teams")
+    await asyncio.sleep(0.4)
+    check("the call coming back keeps the meeting going", app.current is m2 and app.listening)
+    await app.call_ended("Teams")
     await app.end_meeting()
 
-    # Not now on the start notification throws the recording away.
-    before = set(app.meetings)
-    answers[:] = ["discard"]
-    await app.call_started("Teams")
-    await app.prompt
-    check("Not now on a new call stops it", app.current is None and not app.listening)
-    check("and keeps nothing of it", set(app.meetings) == before)
-
     # The engine restarted mid-call: the call carries on in the same meeting.
-    answers[:] = [None]
     await app.call_started("Teams")
-    await app.prompt
+    await app.pending
     m5 = app.current
     app.listening = False
     m5.meta["state"] = "paused"
     m5.meta["recovered"] = True
     app.call = None
-    answers[:] = [None]
     await app.call_started("Teams")
-    await app.prompt
+    await app.pending
     check("after a restart mid-call, the same meeting carries on", app.current is m5 and app.listening)
     await app.end_meeting()
 

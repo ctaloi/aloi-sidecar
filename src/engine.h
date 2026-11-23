@@ -118,6 +118,16 @@ class Engine : public QObject {
     Q_PROPERTY(int followupsOpen READ followupsOpen NOTIFY stateChanged)
     Q_PROPERTY(bool syncing READ syncing NOTIFY followupsChanged)
     Q_PROPERTY(QVariantMap bulk READ bulk NOTIFY bulkChanged)
+    // What the wrap-ups say, taken together, for Home: {days, totals, daily,
+    // topics: [{name, count, minutes, last, recent, meetings, threads,
+    // decisions, questions}], links: [{a, b, n}], people, recent, decisions,
+    // questions}. Empty until fetched.
+    Q_PROPERTY(QVariantMap learned READ learned NOTIFY learnedChanged)
+    // One topic, all the way back, for its own page: {name, count, minutes,
+    // first, last, related: [{name, n}], people, meetings: [{id, title,
+    // started, minutes, tldr, tags, threads}], decisions, questions, mine,
+    // theirs}. Its name is set at once; the rest arrives.
+    Q_PROPERTY(QVariantMap topic READ topic NOTIFY topicChanged)
     // Meetings whose title or transcript has every word searched for, newest
     // first: [{id, title (matched), count, hits: [{at, speaker, text, time}]}].
     Q_PROPERTY(QVariantList searchResults READ searchResults NOTIFY searchChanged)
@@ -150,6 +160,8 @@ public:
     QString candidatesError() const { return m_candidatesError; }
     QVariantList followups() const { return m_followups; }
     QVariantMap bulk() const { return m_bulk; }
+    QVariantMap learned() const { return m_learned; }
+    QVariantMap topic() const { return m_topic; }
     QVariantList searchResults() const { return m_searchResults; }
     QString searched() const { return m_searched; }
     int followupsOpen() const { return m_followupsOpen; }
@@ -205,6 +217,9 @@ public:
     Q_INVOKABLE void editEmail(const QString &id, const QVariantMap &changes);
     Q_INVOKABLE void saveEmail(const QString &id);
     Q_INVOKABLE void fetchFollowups();
+    // days: how far back to look, 0 for everything.
+    Q_INVOKABLE void fetchLearned(int days);
+    Q_INVOKABLE void fetchTopic(const QString &name);
     Q_INVOKABLE void search(const QString &q);
     // Gone, not done: out of the wrap-up and off the Notion page.
     Q_INVOKABLE void removeFollowup(const QString &meeting, int index);
@@ -239,6 +254,8 @@ signals:
     void candidatesChanged();
     void followupsChanged();
     void bulkChanged();
+    void learnedChanged();
+    void topicChanged();
     void searchChanged();
     // Do it all found a page from that day to fill in: the Send sheet asks which.
     void choosePage(const QString &id);
@@ -285,6 +302,10 @@ private:
     QString m_candidatesError;
     QVariantList m_followups;
     QVariantMap m_bulk;
+    QVariantMap m_learned;
+    QVariantMap m_topic;
+    QPointer<QNetworkReply> m_topicFetch;
+    QPointer<QNetworkReply> m_learnedFetch;
     QVariantList m_searchResults;
     QString m_searched;
     QString m_searching;

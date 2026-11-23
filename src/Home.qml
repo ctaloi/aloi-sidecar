@@ -7,8 +7,11 @@ import "sidecar.js" as Sidecar
 // Where Sidecar opens, as every Aloi app opens on what's waiting on you.
 // One sentence: what's on, or how many meetings wait on a wrap-up. The
 // week's meetings split by where each is after the call; the one on now,
-// with its switches; the ones waiting on a wrap-up, oldest first; what you
-// said you'd do; and what went to Notion lately.
+// with its switches; the ones waiting on a wrap-up, newest first and folded
+// to a row. Then
+// what's been learned (Learned.qml): the topics as a map, what was decided
+// and what's open. Then what you said you'd do, and what went to Notion
+// lately.
 Rectangle {
     id: root
     color: ui.window
@@ -16,7 +19,14 @@ Rectangle {
     property double now: Date.now()
 
     readonly property var on: engine.current !== "" ? engine.meetingById(engine.current) : null
-    readonly property var waiting: win.waiting
+    // Newest first here: the ones still fresh, since not all of them get done.
+    readonly property var waiting: win.waiting.slice().reverse()
+    // Folded to a row of them unless asked for all.
+    property bool allWaiting: false
+    // The ready ones ticked to send, by id; chosen is those still sendable.
+    property var picked: []
+    readonly property var chosen: picked.filter(id => win.sendable.some(m => m.id === id))
+    function pick(id) { picked = picked.includes(id) ? picked.filter(x => x !== id) : picked.concat([id]) }
     // The last seven days, by where each meeting is after the call.
     readonly property var week: engine.meetings.filter(m => m.state === "ended" && (m.lines || 0) > 0
                                                         && Date.now() / 1000 - m.started < 7 * 86400)
@@ -68,6 +78,7 @@ Rectangle {
 
     Flickable {
         id: flick
+        objectName: "homeFlick"
         anchors.fill: parent
         contentHeight: content.implicitHeight + 72
         clip: true
@@ -117,7 +128,7 @@ Rectangle {
                                     .arg(root.people(root.on) ? ", " + root.people(root.on) : "")
                                     .arg(engine.listening ? qsTr("pauses") : qsTr("carries on"))
                         : root.count("ready") > 0 ? qsTr("%n ready to check and send.", "", root.count("ready"))
-                        : root.waiting.length > 0 ? qsTr("The oldest is from %1.").arg(Sidecar.dayLabel(root.waiting[0]))
+                        : root.waiting.length > 0 ? qsTr("The oldest is from %1.").arg(Sidecar.dayLabel(win.waiting[0]))
                         : root.open.length > 0 ? qsTr("%n follow-ups still open.", "", root.open.length)
                         : engine.meetings.length === 0 ? qsTr("Space starts listening; the call becomes a meeting.") : ""
                     color: root.on && engine.listening ? ui.live : root.count("ready") > 0 ? ui.hot : ui.muted
@@ -269,13 +280,22 @@ Rectangle {
                                 keys: "e"
                                 onClicked: if (root.on) win.act("end", root.on)
                             }
-                            KeyButton { glyph: "agent"; text: qsTr("Ask about it"); keys: ">"; onClicked: { if (root.on) win.openFrom(root.on.id, -1); win.askAgent() } }
+                            KeyButton {
+                                glyph: "spark"
+                                text: qsTr("Ask AI")
+                                keys: ">"
+                                onClicked: {
+                                    if (win.canAskLive) win.askLive()
+                                    else if (root.on) { win.openFrom(root.on.id, -1); win.askAgent() }
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // Waiting on a wrap-up, oldest first: the ones slipping away on top.
+            // Waiting on a wrap-up, newest first, a row of them; the rest fold away.
+            // The ready ones can be ticked, to send only those.
             ColumnLayout {
                 Layout.fillWidth: true
                 visible: root.waiting.length > 0
@@ -283,18 +303,20 @@ Rectangle {
                 SectionTitle {
                     Layout.fillWidth: true
                     title: qsTr("Waiting on a wrap-up")
-                    detail: qsTr("oldest first")
+                    detail: qsTr("newest first; one drops off after a week")
                     action: engine.bulk.running ? qsTr("Sending %1 of %2").arg(Math.min((engine.bulk.done || 0) + (engine.bulk.failed || 0) + (engine.bulk.choose || []).length + 1, engine.bulk.total)).arg(engine.bulk.total)
-                          : win.sendable.length > 1 ? qsTr("Send %n to Notion", "", win.sendable.length) : ""
-                    onActionTriggered: win.act("sendAll", null)
+                          : root.chosen.length > 0 ? qsTr("Send the %n ticked to Notion", "", root.chosen.length)
+                          : win.sendable.length > 1 ? qsTr("Send all %n to Notion", "", win.sendable.length) : ""
+                    onActionTriggered: win.act("sendAll", root.chosen.length > 0 ? { ids: root.chosen } : null)
                 }
                 GridLayout {
                     Layout.fillWidth: true
+                    id: waitingGrid
                     columns: content.width > 860 ? 3 : 2
                     columnSpacing: 12
                     rowSpacing: 12
                     Repeater {
-                        model: root.waiting
+                        model: root.allWaiting ? root.waiting : root.waiting.slice(0, waitingGrid.columns)
                         MeetingCard {
                             required property var modelData
                             Layout.fillWidth: true
@@ -304,6 +326,44 @@ Rectangle {
                         }
                     }
                 }
+                // The rest, folded away: a line to bring them out or put them back.
+                Rectangle {
+                    objectName: "waitingFold"
+                    Layout.fillWidth: true
+                    visible: root.waiting.length > waitingGrid.columns
+                    implicitHeight: 30
+                    radius: theme.radius
+                    color: foldHover.hovered ? ui.hover : "transparent"
+                    border.color: ui.line
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 8
+                        Glyph {
+                            name: root.allWaiting ? "up" : "down"
+                            color: ui.muted
+                            font.pixelSize: 11
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Label {
+                            text: root.allWaiting ? qsTr("Fold them away")
+                                : qsTr("%n more waiting", "", root.waiting.length - waitingGrid.columns) + "  ·  " + qsTr("show all")
+                            color: foldHover.hovered ? ui.text : ui.muted
+                            font.pixelSize: 11
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                    HoverHandler { id: foldHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.allWaiting = !root.allWaiting }
+                }
+            }
+
+            // What the meetings have come to, taken together.
+            Learned {
+                objectName: "learned"
+                Layout.fillWidth: true
+                Layout.topMargin: 4
+                Layout.bottomMargin: 4
+                visible: engine.meetings.length > 0
             }
 
             // What you said you'd do, newest meeting first.
@@ -375,12 +435,21 @@ Rectangle {
         readonly property color tone: k === "ready" ? theme.accent : k === "drafting" ? ui.muted : ui.hot
         implicitHeight: cardColumn.implicitHeight + 26
         radius: theme.radius
-        color: cardHover.hovered ? ui.wash(tone, 0.10) : ui.wash(tone, 0.04)
-        border.color: cardHover.hovered ? tone : ui.line
+        // Ready, or part way into Notion: it can be ticked to send with others.
+        readonly property bool sendable: win.sendable.some(o => o.id === m.id)
+        readonly property bool ticked: sendable && root.picked.includes(m.id)
+        // Where it is in a send of several: on its way now, or still in line.
+        readonly property bool going: Sidecar.stage(m) === "sending" || (!!engine.bulk.running && engine.bulk.current === m.id)
+        readonly property bool queued: !going && !!engine.bulk.running && (engine.bulk.ids || []).includes(m.id)
+                                       && !(engine.bulk.sent || []).includes(m.id) && sendable
+        color: cardHover.hovered || ticked ? ui.wash(tone, 0.10) : ui.wash(tone, 0.04)
+        border.color: cardHover.hovered || ticked ? tone : ui.line
         Behavior on color { ColorAnimation { duration: 120 } }
 
         HoverHandler { id: cardHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: root.open_(card.m) }
+        // A MouseArea, not a TapHandler, so the tick box's own takes the
+        // click and the card doesn't open as well.
+        MouseArea { anchors.fill: parent; onClicked: root.open_(card.m) }
 
         Rectangle {
             y: Math.max(theme.radius, 1)
@@ -399,11 +468,14 @@ Rectangle {
                 Layout.fillWidth: true
                 spacing: 8
                 Label {
-                    text: (engine.bulk.choose || []).includes(card.m.id) && card.k === "ready" ? qsTr("Pick a page")
+                    text: card.going ? qsTr("Sending to Notion…")
+                        : card.queued ? qsTr("Queued to send")
+                        : Sidecar.stage(card.m) === "sendFailed" ? qsTr("Send failed")
+                        : (engine.bulk.choose || []).includes(card.m.id) && card.k === "ready" ? qsTr("Pick a page")
                         : card.k === "ready" ? (card.m.edited ? qsTr("Wrap-up edited") : qsTr("Wrap-up ready"))
                         : card.k === "drafting" ? qsTr("Drafting…")
                         : Sidecar.stage(card.m) === "draftFailed" ? qsTr("Draft failed") : qsTr("Needs a wrap-up")
-                    color: Sidecar.stage(card.m) === "draftFailed" ? ui.danger : card.tone
+                    color: ["draftFailed", "sendFailed"].includes(Sidecar.stage(card.m)) ? ui.danger : card.tone
                     font.pixelSize: 11
                     font.bold: card.k === "ready"
                 }
@@ -412,6 +484,31 @@ Rectangle {
                     text: Sidecar.length(card.m, root.now)
                     color: ui.muted
                     font.pixelSize: 11
+                }
+                Rectangle {
+                    objectName: "pickToSend"
+                    visible: card.sendable && !engine.bulk.running
+                    width: 16; height: 16
+                    radius: Math.min(3, theme.radius)
+                    color: card.ticked ? theme.accent : pickHover.hovered ? ui.wash(theme.accent, 0.18) : "transparent"
+                    border.color: card.ticked || pickHover.hovered ? theme.accent : ui.muted
+                    Glyph {
+                        anchors.centerIn: parent
+                        visible: card.ticked
+                        name: "check"
+                        color: theme.background
+                        font.pixelSize: 11
+                    }
+                    HoverHandler { id: pickHover }
+                    ToolTip.visible: pickHover.hovered
+                    ToolTip.delay: 500
+                    ToolTip.text: card.ticked ? qsTr("Leave it out") : qsTr("Tick to send with others")
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -7
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.pick(card.m.id)
+                    }
                 }
             }
             Label {

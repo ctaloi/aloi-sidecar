@@ -4,11 +4,12 @@
 Captures your mic ("Chris") and every speaker output ("Them") through
 PipeWire and transcribes locally with Parakeet (sherpa-onnx). It only listens
 while asked to (POST /listen); the Aloi Sidecar app turns it on and off and
-runs the agent. Events stream from GET /events; http://127.0.0.1:8777 is a
-plain web view with a direct Claude ask box, kept as a fallback.
+runs the agent. Events stream from GET /events. It asks no model itself
+except through `claude -p` (wrap-ups, takeaways, the email): no API key.
 """
 import asyncio
 import concurrent.futures
+import collections
 import difflib
 import json
 import os
@@ -18,12 +19,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import anthropic
 import numpy as np
 import sherpa_onnx
 from aiohttp import web
 
 import agenda
+import insights
 import calls
 import mailer
 import takeaways
@@ -38,46 +39,34 @@ tools.extend_path()
 RATE = 16000
 CHUNK = 1600  # 100 ms of samples per read
 PORT = int(os.environ.get("SIDECAR_PORT", 8777))
-HERE = Path(__file__).resolve().parent
 MODELS = Path.home() / ".local/share/aloi-sidecar/models"
 PARAKEET = MODELS / "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
 MEETINGS = Path(os.environ.get("SIDECAR_MEETINGS", Path.home() / ".local/share/aloi-sidecar/meetings"))
 TRASH = MEETINGS.parent / "trash"  # deleted meetings go here, never straight to nothing
 SETTINGS = Path(os.environ.get("SIDECAR_SETTINGS", Path.home() / ".config/aloi-sidecar/settings.json"))
-DEFAULTS = {"watch_calls": True, "calendar_offers": True, "live_takeaways": True, "stop_on_silence": True,
+DEFAULTS = {"watch_calls": True, "live_takeaways": True, "stop_on_silence": True,
             "speaker_names": False}
-QUIET_ASK = 5 * 60  # seconds of nothing said while listening before Sidecar asks if the call's still on
-QUIET_END = 3 * 60  # and then, unanswered and still quiet, before the meeting ends by itself
-SLACK_AFTER = 5 * 60  # a meeting's "about to start" offer stays up until five minutes in
+QUIET_ASK = 5 * 60  # seconds of nothing said while listening before the call is taken to be over
+QUIET_END = 3 * 60  # and then, still quiet, before the meeting ends by itself
 SWITCH_AFTER = 60  # seconds before a running meeting gives way to the next calendar meeting
-END_AFTER = 30  # seconds after a call lets go of the mic before its meeting ends, unless Not now
-KEY_FILE = Path.home() / ".config/aloi-sidecar/api-key"  # optional; else SDK defaults (ANTHROPIC_API_KEY etc.)
+END_AFTER = 30  # seconds after a call lets go of the mic before its meeting ends
 RECOVER_WINDOW = 2 * 60 * 60  # a meeting left live by a crash comes back paused if its last line is this recent
 ME = "Chris"
 # Lines Chris adds himself, not speech: a typed note, and a mark on a moment
 # that mattered. They sit in the transcript so the agent and the wrap-up see them.
 OWN = ("Note", "Mark")
 
-INTERIM_EVERY = 1.5  # seconds between live-preview decodes
-INTERIM_TAIL = 8  # preview only the last N seconds of the utterance
+INTERIM_EVERY = 2.5  # seconds between live-preview decodes
+INTERIM_TAIL = 4  # preview only the last N seconds of the utterance
+# A mic line whose loudness rises and falls with a speaker output's, at the
+# same moments, is that speaker heard through the room: skip it before it's
+# decoded. Speech over speech (Chris talking over them) blurs the match.
+ECHO_CORR = float(os.environ.get("SIDECAR_ECHO_CORR", 0.85))
+ECHO_MIN_FRAMES = 15  # 1.5 s; shorter mic lines are cheap, decode them anyway
+ECHO_LAG = 5  # frames (100 ms each) either way the two captures may drift
 ECHO_HOLD = 3  # seconds a mic line waits for the speaker line it may be an echo of
 ECHO_RATIO = 0.55
 
-# Direct Q&A for the web view. Effort stays low so answers come back fast mid-call.
-ASK_MODEL = "claude-opus-5-5"
-ASK_EFFORT = "low"
-FALLBACK_BETA = "server-side-fallback-2026-07-01"
-
-SYSTEM = f"""You are a sidecar assistant listening to a live meeting alongside {ME}.
-You receive the meeting transcript so far, produced by local speech recognition, then a question from {ME}.
-
-Transcript notes:
-- "{ME}" lines come from {ME}'s microphone. "Them" lines are everyone else on the call, mixed together.
-- Recognition errors happen, especially names, numbers and jargon. Read past obvious mis-hearings.
-- The transcript may stop mid-thought; it is live.
-
-Answer {ME}'s question directly and briefly; he is reading this while the call continues.
-Quote or cite the moment (timestamp) when it helps. If the transcript doesn't contain the answer, say so plainly."""
 
 
 def make_recognizer():
@@ -87,8 +76,10 @@ def make_recognizer():
         joiner=str(PARAKEET / "joiner.int8.onnx"),
         tokens=str(PARAKEET / "tokens.txt"),
         model_type="nemo_transducer",
-        # onnxruntime threads busy-wait; 2 is as fast as 6 here at a quarter of the CPU
-        num_threads=2,
+        # onnxruntime's extra threads busy-wait. Measured 2026-11-12 on the
+        # Core Ultra X7: an 8 s line takes 646 ms wall / 644 ms CPU on one
+        # thread, 530 ms / 1,769 ms on two. One is still ~12x real time.
+        num_threads=int(os.environ.get("SIDECAR_ASR_THREADS", 1)),
         decoding_method="greedy_search",
     )
 
@@ -104,6 +95,26 @@ def make_vad():
 
 def stamp(t):
     return datetime.fromtimestamp(t).strftime("%H:%M:%S")
+
+
+def echo_score(mine, theirs, lag=ECHO_LAG):
+    """How closely one loudness track (100 ms frames) follows another,
+    allowing a few frames of drift either way: Pearson correlation at the best
+    lag, 0 when either side is flat (silence, or an idle output)."""
+    mine, theirs = np.asarray(mine, dtype=np.float64), np.asarray(theirs, dtype=np.float64)
+    n = min(len(mine), len(theirs))
+    best = 0.0
+    for k in range(-lag, lag + 1):
+        a = mine[max(0, k):n + min(0, k)]
+        b = theirs[max(0, -k):n - max(0, k)]
+        m = min(len(a), len(b))
+        if m < ECHO_MIN_FRAMES:
+            continue
+        a, b = a[:m], b[:m]
+        if a.std() < 1e-6 or b.std() < 1e-6:
+            continue
+        best = max(best, float(np.corrcoef(a, b)[0, 1]))
+    return best
 
 
 def similar(a, b):
@@ -242,6 +253,8 @@ class Sidecar:
         self.voice_sets = {}  # meeting id -> voices.Voices
         self.pending_me = []  # held briefly so speaker echo of "Them" can be dropped
         self.clients = set()
+        self.previewers = set()
+        self.echo_skips = 0  # clients that show the live preview (the app, the web view)
         self.channels = []
         self.tasks = []
         self.listening = False
@@ -257,21 +270,19 @@ class Sidecar:
         self.notion = Notion()
         self.drafting = {}  # meeting id -> task
         self.sending = {}
+        for m in list(self.meetings.values()):  # short ones from before the rule
+            if self.too_short(m):
+                print(f"short: {m.id} ({m.lines()} lines) goes to the trash folder", flush=True)
+                self.delete_meeting(m)
         self.bulk = {"running": False}  # Send all, as it goes
         self.syncing = asyncio.Lock()  # one pass over the Follow-ups database at a time
         self.settings = {**DEFAULTS, **(json.loads(SETTINGS.read_text()) if SETTINGS.exists() else {})}
         self.call = None  # {"app", "since"} while another app holds the mic
-        self.prompt = None  # the notification task asking about the call
+        self.pending = None  # what's waiting to happen by itself: the call's meeting ending, a switch
         self.agenda = agenda.Calendar()
-        self.offered = set()  # calendar events already offered, so each is asked about once
+        self.offered = set()  # calendar events already switched to (or passed over), each once
         self.watch = calls.CallWatch(lambda: [c.pid for c in self.channels if c.pid],
                                      self.call_started, self.call_ended, self.sounds_like_call)
-        self.ask_blocks = []  # frozen transcript blocks already sent to Claude
-        self.ask_sent = 0  # number of segments covered by ask_blocks
-        if KEY_FILE.exists():
-            self.client = anthropic.AsyncAnthropic(api_key=KEY_FILE.read_text().strip())
-        else:
-            self.client = anthropic.AsyncAnthropic()
 
     def recover(self):
         """A meeting left live by a crash or a reboot comes back paused if it
@@ -295,6 +306,13 @@ class Sidecar:
             m.save()
 
     # ---- meetings ----
+
+    def too_short(self, m):
+        """An ended meeting with only a few lines, that Chris did nothing
+        with: no note or mark of his own, no wrap-up, nothing in Notion."""
+        return (m.meta["state"] == "ended" and m is not self.current and m.lines() < wrapup.MIN_LINES
+                and not m.wrapup() and not m.meta.get("notion")
+                and not any(s["speaker"] in OWN for s in m.segments))
 
     def listing(self):
         return sorted((m.summary() for m in self.meetings.values()), key=lambda s: s["started"], reverse=True)
@@ -330,14 +348,14 @@ class Sidecar:
 
     async def call_started(self, app):
         """Another app took the mic. If Sidecar isn't already listening, it
-        starts straight away, so the opening of the call is never lost, and a
-        notification offers Not now, which stops and throws the recording
-        away."""
+        starts straight away, so the opening of the call is never lost. It
+        says nothing: the bar shows it's recording. A call that wasn't worth
+        keeping is deleted afterwards (and a few lines go by themselves)."""
         self.call = {"app": app, "since": time.time()}
         self.broadcast(self.state())
         if self.listening or not self.settings["watch_calls"]:
             return
-        self.notify(self.auto_listen(app))
+        self.later(self.auto_listen())
 
     def used_events(self):
         """Calendar meetings a finished recording already had: done with."""
@@ -356,79 +374,41 @@ class Sidecar:
 
     async def call_ended(self, app):
         """The call let go of the mic. A meeting that's listening ends by
-        itself half a minute later, unless Not now keeps it going."""
+        itself half a minute later."""
         self.call = None
         self.broadcast(self.state())
         if self.listening and self.current:
-            self.notify(self.ask_to_end(self.current, app))
+            self.later(self.end_after_call(self.current))
         else:
-            self.notify(None)
+            self.later(None)
 
-    def notify(self, coro):
-        if self.prompt:
-            self.prompt.cancel()
-        self.prompt = asyncio.create_task(coro) if coro else None
+    def later(self, coro):
+        """One thing waits to happen by itself at a time; a newer one (the
+        call coming back, the next meeting) takes the older one's place."""
+        if self.pending:
+            self.pending.cancel()
+        self.pending = asyncio.create_task(coro) if coro else None
 
-    async def auto_listen(self, app):
+    async def auto_listen(self):
         m = self.current
         if m and m.meta.get("recovered"):
             # The engine restarted mid-call: the call is the same meeting.
             m.meta.pop("recovered", None)
             await self.set_listening(True)
         else:
-            m = await self.start_meeting()
-        choice = await calls.notify(f"Recording “{m.meta['title']}”",
-                                    f"{app} is using your mic, so Sidecar is listening. Not now stops and discards it.",
-                                    [("default", "Open Sidecar"), ("discard", "Not now")])
-        if choice == "default":
-            await self.show_window()
-        elif choice == "discard" and self.current is m:
-            await self.discard_current()
-
-    async def discard_current(self):
-        """Not now on a call Sidecar started by itself: stop, and nothing of it
-        is kept (it goes to the trash folder if anything was heard)."""
-        m = self.current
-        if not m:
-            return
-        await self.set_listening(False)
-        self.current = None
-        m.meta["state"] = "ended"
-        m.meta["ended"] = time.time()
-        m.close()
-        if m.lines():
-            m.save()
-            self.delete_meeting(m)
-        else:
-            del self.meetings[m.id]
-            self.broadcast({"type": "meeting_removed", "id": m.id})
-        self.broadcast(self.state())
-
-    async def show_window(self):
-        """Listening always shows: the window opens (or comes forward) with
-        its pulsing pill, so nothing is ever heard with Sidecar out of sight."""
-        try:
-            await asyncio.create_subprocess_exec("gtk-launch", "aloi-sidecar", stdout=asyncio.subprocess.DEVNULL,
-                                                 stderr=asyncio.subprocess.DEVNULL)
-        except FileNotFoundError:
-            pass
+            await self.start_meeting()
 
     # ---- the calendar ----
 
     async def follow_calendar(self):
-        """Keeps today's meetings fresh, offers to listen a couple of minutes
-        before each, and offers to switch when the next one begins while
-        another is still being heard."""
+        """Keeps today's meetings fresh (they name a call when it starts), and
+        moves on to the next one when it begins while a meeting that's over
+        is still being heard."""
         while True:
             try:
                 if self.agenda.due():
                     await self.agenda.refresh()
                 now = time.time()
-                # Two meetings at the same time (double-booked) make one offer, not two.
-                fresh = [e for e in self.agenda.starting(now) if e["id"] not in self.offered]
-                if fresh and not self.listening and self.settings["calendar_offers"]:
-                    self.offered.update(e["id"] for e in fresh if e["t0"] == fresh[0]["t0"])
-                    self.notify(self.offer_meeting(fresh[0], [e for e in fresh[1:] if e["t0"] == fresh[0]["t0"]]))
                 for e in self.agenda.begun(now):
                     if not (self.listening and self.current) or ("switch", e["id"]) in self.offered:
                         continue
@@ -437,60 +417,31 @@ class Sidecar:
                     if on.get("id") == e["id"]:
                         continue
                     # Only when the meeting being heard is over (or about to be)
-                    # does the next one take over by itself; overlapping or
-                    # unplanned, it's only ever offered.
+                    # does the next one take over; overlapping or unplanned,
+                    # the one he's in carries on.
                     over = bool(on) and on.get("end", 0) - e["t0"] <= agenda.SLACK
-                    if on and not over and on.get("end", 0) > e["t0"]:
-                        continue  # double-booked: he's in the one he started; don't interrupt
-                    self.notify(self.offer_switch(self.current, e, auto=over))
+                    if over:
+                        self.later(self.switch_to(self.current, e))
             except Exception as e:  # the calendar is a nicety; it never takes the engine down
                 print(f"calendar: {e}", file=sys.stderr, flush=True)
             await asyncio.sleep(20)
 
-    async def offer_meeting(self, e, also=()):
-        minutes = max(1, round((e["t0"] - time.time()) / 60))
-        who = e.get("organizer") or ""
-        if also:
-            who = (f"{who} · " if who else "") + "also at this time: " + ", ".join(a["subject"] for a in also)
-        actions = ([("default", "Join and listen"), ("listen", "Just listen")] if e.get("joinUrl")
-                   else [("default", "Listen")]) + [("ignore", "Not now")]
-        choice = await calls.notify(f"{e['subject']} in {minutes} min",
-                                    (f"{who} · " if who else "") + "Sidecar can listen and take notes.",
-                                    actions, timeout=int(max(60, e["t0"] + SLACK_AFTER - time.time())))
-        if choice not in ("default", "listen") or self.listening:
-            return
-        if choice == "default" and e.get("joinUrl"):
-            await agenda.join(e["joinUrl"])
-        await self.start_meeting(event=agenda.event_meta(e))
-        await self.show_window()
-
-    async def offer_switch(self, m, e, auto=True):
-        asked = time.time()
-        choice = await calls.notify(f"{e['subject']} is starting",
-                                    f"Switch from “{m.meta['title']}”?" + (" It switches by itself in a minute." if auto else ""),
-                                    [("default", "Switch"), ("keep", "Keep this meeting")], timeout=SWITCH_AFTER)
-        if choice == "keep" or (choice is None and not auto):
-            return
-        if choice is None:
-            await asyncio.sleep(max(0, SWITCH_AFTER - (time.time() - asked)))
+    async def switch_to(self, m, e):
+        """The next calendar meeting has begun and the one being heard is
+        over: a minute's grace for goodbyes, then the new one starts."""
+        await asyncio.sleep(SWITCH_AFTER)
         if self.current is m and self.listening:
             await self.start_meeting(event=agenda.event_meta(e))
 
-    async def ask_to_end(self, m, app):
+    async def end_after_call(self, m):
+        # The half minute runs its course, and again for as long as the
+        # other side is still being heard, since a mute or a headset switch
+        # can look like the call ending.
         asked = time.time()
-        choice = await calls.notify(f"The {app} call ended",
-                                    f"“{m.meta['title']}” ends in {END_AFTER} seconds and its wrap-up gets drafted.",
-                                    [("default", "End now"), ("keep", "Not now")], timeout=END_AFTER)
-        if choice == "keep":
-            return
-        if choice is None:
-            # Dismissed or timed out: the half minute still runs its course,
-            # and again for as long as the other side is still being heard,
-            # since a mute or a headset switch can look like the call ending.
-            await asyncio.sleep(max(0, END_AFTER - (time.time() - asked)))
-            while self.current is m and self.listening and not self.call and self.heard_them_since(m, asked):
-                asked = time.time()
-                await asyncio.sleep(END_AFTER)
+        await asyncio.sleep(END_AFTER)
+        while self.current is m and self.listening and not self.call and self.heard_them_since(m, asked):
+            asked = time.time()
+            await asyncio.sleep(END_AFTER)
         if self.current is not m or self.call or not self.listening:
             return  # something else happened meanwhile: another call, a pause, or it ended already
         await self.end_meeting()
@@ -503,10 +454,10 @@ class Sidecar:
         """Starts a meeting, ending the one that's on. With no title or
         event, the calendar meeting that's on (or about to be) names it."""
         await self.end_meeting()
-        # A "Listen?" notification is answered by starting; one doing the
-        # starting itself mustn't cancel itself.
-        if self.prompt and asyncio.current_task() is not self.prompt:
-            self.notify(None)
+        # A new meeting leaves nothing of the last one waiting to happen;
+        # the one doing the starting mustn't cancel itself.
+        if self.pending and asyncio.current_task() is not self.pending:
+            self.later(None)
         event = agenda.normalize(event)
         # Unnamed: the call app's window says which meeting it is (matched to
         # the calendar when it can be), else the calendar's meeting on now,
@@ -526,7 +477,6 @@ class Sidecar:
         m.meta["people"] = agenda.people(event, ME)
         self.meetings[m.id] = m
         self.current = m
-        self.ask_blocks, self.ask_sent = [], 0
         self.announce(m)
         await self.set_listening(True)
         return m
@@ -549,6 +499,11 @@ class Sidecar:
             self.broadcast({"type": "meeting_removed", "id": m.id})
             self.broadcast(self.state())
             return None
+        if self.too_short(m):  # a few lines, nothing of Chris's: not a meeting
+            print(f"short: {m.id} ({m.lines()} lines) goes to the trash folder", flush=True)
+            self.delete_meeting(m)
+            self.broadcast(self.state())
+            return None
         self.announce(m)
         self.broadcast(self.state())
         if m.lines() >= wrapup.MIN_LINES and not m.wrapup():
@@ -564,7 +519,6 @@ class Sidecar:
         m.meta["state"] = "paused"
         m.meta["ended"] = None
         self.current = m
-        self.ask_blocks, self.ask_sent = [], 0
         await self.set_listening(True)
         return m
 
@@ -809,7 +763,8 @@ class Sidecar:
             return None
         todo = [m for m in (self.meetings.get(i) for i in ids) if m and self.sendable(m)]
         if todo:
-            self.set_bulk(running=True, total=len(todo), done=0, failed=0, choose=[])
+            self.set_bulk(running=True, total=len(todo), done=0, failed=0, choose=[], ids=[m.id for m in todo],
+                          current=None, sent=[], failures=[], finished=None)
             asyncio.create_task(self._send_all(todo))
         return len(todo)
 
@@ -828,7 +783,9 @@ class Sidecar:
         pages from its day. A page that could be this meeting is left for
         Chris to pick: nothing merges, or duplicates, by guessing."""
         done, failed, choose = 0, 0, []
+        sent, failures = [], []  # which ones, for the window's progress bar and cards
         for m in todo:
+            self.set_bulk(current=m.id)
             try:
                 # One that failed part way has its page and carries on with it.
                 fresh = not (m.meta.get("notion") or {}).get("id")
@@ -838,13 +795,20 @@ class Sidecar:
                     await self.sending[m.id]
                     if (m.meta.get("notion") or {}).get("state") == "sent":
                         done += 1
+                        sent.append(m.id)
                     else:
                         failed += 1
+                        failures.append({"id": m.id, "error": (m.meta.get("notion") or {}).get("error", "")})
+                else:  # nothing to send after all: say so rather than skip it silently
+                    failed += 1
+                    failures.append({"id": m.id, "error": "Nothing to send, or it's already sending."})
             except Exception as e:  # Notion unreachable: nothing filed unchecked
                 print(f"bulk send: {m.id}: {e}", file=sys.stderr, flush=True)
                 failed += 1
-            self.set_bulk(done=done, failed=failed, choose=choose)
-        self.set_bulk(running=False)
+                failures.append({"id": m.id, "error": str(e) or type(e).__name__})
+            self.set_bulk(done=done, failed=failed, choose=choose, sent=sent, failures=failures)
+        print(f"bulk send: {done} sent, {failed} failed, {len(choose)} to pick a page for", flush=True)
+        self.set_bulk(running=False, current=None, finished=time.time())
 
     def send(self, m, target=None):
         """Starts filing the meeting in Notion in the background."""
@@ -894,32 +858,23 @@ class Sidecar:
         return time.time() - max(last, self.listening_since)
 
     async def watch_silence(self):
-        """Listening to a room where nothing's being said: ask whether the
-        call's still on, and if nobody answers and it stays quiet, end it,
-        rather than leave the mic open on dead air."""
+        """Listening to a room where nothing's being said: after five quiet
+        minutes and three more, the meeting ends by itself, rather than
+        leave the mic open on dead air."""
         while True:
             await asyncio.sleep(15)
             if not (self.listening and self.current and self.settings["stop_on_silence"]):
                 continue
             if self.quiet_for() >= QUIET_ASK and not self.asked_quiet:
                 self.asked_quiet = True
-                self.notify(self.ask_if_quiet(self.current))
+                self.later(self.end_if_quiet(self.current))
 
-    async def ask_if_quiet(self, m):
-        heard, asked = m.lines(), time.time()
-        minutes = int(self.quiet_for() // 60)
-        choice = await calls.notify(f"Nothing said for {minutes} minutes",
-                                    f"Still on a call? “{m.meta['title']}” ends by itself in three minutes if it stays quiet.",
-                                    [("default", "Keep listening"), ("end", "End meeting")], timeout=QUIET_END)
-        if choice == "default":
-            self.listening_since = time.time()  # another five minutes before asking again
-            self.asked_quiet = False
-            return
-        if choice is None:
-            await asyncio.sleep(max(0, QUIET_END - (time.time() - asked)))
+    async def end_if_quiet(self, m):
+        heard = m.lines()
+        await asyncio.sleep(QUIET_END)
         if self.current is not m or not self.listening:
             return
-        if choice == "end" or m.lines() == heard:
+        if m.lines() == heard:
             await self.end_meeting()
         else:
             self.asked_quiet = False  # people started talking again
@@ -1032,6 +987,13 @@ class Sidecar:
                             "inNotion": sent and bool(item.get("notion") or item.get("row")),
                             "syncError": item.get("sync_error")})
         return sorted(out, key=lambda f: (-f["started"], f["index"]))  # newest meeting first
+
+    def learned(self, days=30):
+        """Home's other half: what the wrap-ups say, taken together."""
+        return insights.learned(((m.meta, m.notes()) for m in self.meetings.values()), time.time(), days)
+
+    def topic(self, name):
+        return insights.topic(((m.meta, m.notes()) for m in self.meetings.values()), name, time.time())
 
     def open_followups(self):
         return sum(1 for f in self.followups() if not f["done"])
@@ -1323,6 +1285,24 @@ class Sidecar:
     def them_speaking(self):
         return any(c.speaking for c in self.channels if c.speaker != ME)
 
+    def heard_through_room(self, mic, seconds):
+        """Whether a mic line that just ended is a speaker output picked up by
+        the mic, judged on loudness alone so it costs no decode. The window
+        covers the line plus the silence the VAD waited for after it."""
+        if seconds * 10 < ECHO_MIN_FRAMES:
+            return False
+        since = time.time() - seconds - 0.8
+        mine = mic.loudness_since(since)
+        for c in self.channels:
+            if c.speaker == ME:
+                continue
+            score = echo_score(mine, c.loudness_since(since))
+            if score >= ECHO_CORR:
+                self.echo_skips += 1
+                print(f"echo: skipped a {seconds:.1f}s mic line, follows {c.label} at {score:.2f}", flush=True)
+                return True
+        return False
+
     def add_segment(self, speaker, start, end, text, voice=None):
         seg = {"speaker": speaker, "start": start, "end": end, "text": text}
         if voice:
@@ -1369,46 +1349,6 @@ class Sidecar:
             if self.channels:
                 self.broadcast({"type": "levels", "channels": [c.status() for c in self.channels]})
 
-    # ---- Claude (web view only; the app asks through its agent) ----
-
-    def transcript_text(self, segs):
-        return "\n".join(f"[{stamp(s['start'])}] {s['speaker']}: {s['text']}" for s in segs)
-
-    async def ask(self, question):
-        # Everything new since the last question becomes one frozen block, so the
-        # prefix Claude saw last time is byte-identical and served from cache.
-        segments = self.current.segments if self.current else []
-        new = segments[self.ask_sent:]
-        if new:
-            self.ask_blocks.append({"type": "text", "text": self.transcript_text(new)})
-            self.ask_sent = len(segments)
-        if not self.ask_blocks:
-            yield {"type": "answer_delta", "text": "Nothing has been transcribed yet."}
-            return
-        blocks = [dict(b) for b in self.ask_blocks]
-        blocks[0]["text"] = "<transcript>\n" + blocks[0]["text"]
-        blocks[-1] = {**blocks[-1], "text": blocks[-1]["text"] + "\n</transcript>", "cache_control": {"type": "ephemeral"}}
-        content = blocks + [{"type": "text", "text": f"Question from {ME}: {question}"}]
-        async with self.client.beta.messages.stream(
-            model=ASK_MODEL,
-            max_tokens=4000,
-            system=SYSTEM,
-            output_config={"effort": ASK_EFFORT},
-            betas=[FALLBACK_BETA],
-            fallbacks="default",
-            messages=[{"role": "user", "content": content}],
-        ) as stream:
-            async for text in stream.text_stream:
-                yield {"type": "answer_delta", "text": text}
-            final = await stream.get_final_message()
-        if final.stop_reason == "refusal":
-            yield {"type": "answer_delta", "text": "\n\n(Claude declined to answer this one.)"}
-        u = final.usage
-        yield {"type": "answer_done", "usage": {
-            "input": u.input_tokens, "cache_read": u.cache_read_input_tokens or 0,
-            "cache_write": u.cache_creation_input_tokens or 0, "output": u.output_tokens}}
-
-
 def overlaps(a, b):
     return a["start"] < b["end"] + 2 and b["start"] < a["end"] + 2
 
@@ -1422,6 +1362,10 @@ class Channel:
         self.alive = False
         self.speaking = False
         self.pid = None
+        self.loudness = collections.deque(maxlen=600)  # (arrival time, rms) per 100 ms read, last minute
+
+    def loudness_since(self, t):
+        return [r for when, r in self.loudness if when >= t]
 
     def status(self):
         return {"label": self.label, "speaker": self.speaker, "level": round(self.level, 3),
@@ -1452,6 +1396,7 @@ class Channel:
                     data = await proc.stdout.readexactly(CHUNK * 2)
                     x = np.frombuffer(data, dtype="<i2").astype(np.float32) / 32768.0
                     self.level = float(np.sqrt(np.mean(x * x)))
+                    self.loudness.append((time.time(), self.level))
                     buf = np.concatenate([buf, x])
                     while len(buf) >= window:
                         vad.accept_waveform(buf[:window])
@@ -1464,7 +1409,8 @@ class Channel:
                         # the other side talks: that's mostly their voice echoing.
                         busy = not self.app.pool._work_queue.empty()
                         echo = self.speaker == ME and self.app.them_speaking()
-                        if now - last_interim > INTERIM_EVERY and len(speech) > 6 and not busy and not echo:
+                        if (self.app.previewers and now - last_interim > INTERIM_EVERY
+                                and len(speech) > 6 and not busy and not echo):
                             last_interim = now
                             tail = np.concatenate(speech[-INTERIM_TAIL * 10:])
                             text = await loop.run_in_executor(self.app.pool, self.app.decode, tail)
@@ -1476,6 +1422,9 @@ class Channel:
                         speech = []
                         end = time.time()
                         start = end - len(samples) / RATE
+                        if self.speaker == ME and self.app.heard_through_room(self, len(samples) / RATE):
+                            self.app.broadcast({"type": "interim", "label": self.label, "speaker": self.speaker, "text": ""})
+                            continue
                         text = await loop.run_in_executor(self.app.pool, self.app.decode, samples)
                         self.app.broadcast({"type": "interim", "label": self.label, "speaker": self.speaker, "text": ""})
                         if text:
@@ -1509,14 +1458,6 @@ def label_for(device, displays_seen):
 
 # ---- HTTP ----
 
-def line(msg):
-    return (json.dumps(msg) + "\n").encode()
-
-
-async def index(request):
-    return web.FileResponse(HERE / "web.html")
-
-
 async def events(request):
     app = request.app["sidecar"]
     resp = web.StreamResponse(headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache"})
@@ -1528,6 +1469,8 @@ async def events(request):
     if app.current:
         hello += [app.segment_event(s, app.current.id) for s in app.current.segments]
     app.clients.add(q)
+    if request.query.get("interims") == "1":
+        app.previewers.add(q)
     try:
         for m in hello:
             await resp.write(f"data: {json.dumps(m)}\n\n".encode())
@@ -1541,6 +1484,7 @@ async def events(request):
         pass
     finally:
         app.clients.discard(q)
+        app.previewers.discard(q)
     return resp
 
 
@@ -1707,6 +1651,21 @@ async def followups(request):
     return web.json_response({"followups": request.app["sidecar"].followups()})
 
 
+async def learned(request):
+    try:
+        days = max(0, int(request.query.get("days", 30)))
+    except ValueError:
+        days = 30
+    return web.json_response({"learned": request.app["sidecar"].learned(days)})
+
+
+async def topic(request):
+    found = request.app["sidecar"].topic(request.query.get("name", ""))
+    if not found:
+        raise web.HTTPNotFound(text="Nothing under that topic.")
+    return web.json_response({"topic": found})
+
+
 async def set_followup(request):
     app = request.app["sidecar"]
     b = await body(request)
@@ -1774,29 +1733,11 @@ async def set_settings(request):
     return web.json_response(app.settings)
 
 
-async def ask(request):
-    app = request.app["sidecar"]
-    question = (await request.json()).get("q", "").strip()
-    resp = web.StreamResponse(headers={"Content-Type": "application/x-ndjson"})
-    await resp.prepare(request)
-    try:
-        async for msg in app.ask(question):
-            await resp.write(line(msg))
-    except (anthropic.AuthenticationError, TypeError):  # TypeError: no credentials configured at all
-        await resp.write(line({"type": "error", "text": "No Anthropic credentials. Link a key to ~/.config/aloi-sidecar/api-key, then restart."}))
-    except anthropic.APIStatusError as e:
-        await resp.write(line({"type": "error", "text": f"Claude API error {e.status_code}: {e.message}"}))
-    except anthropic.APIConnectionError:
-        await resp.write(line({"type": "error", "text": "Couldn't reach the Claude API."}))
-    return resp
-
-
 async def main():
     listen_now = "--listen" in sys.argv
     sidecar = Sidecar()
     app = web.Application()
     app["sidecar"] = sidecar
-    app.router.add_get("/", index)
     app.router.add_get("/events", events)
     app.router.add_get("/status", status)
     app.router.add_post("/listen", listen)
@@ -1815,12 +1756,13 @@ async def main():
     app.router.add_get("/meeting/{id}/markdown", markdown)
     app.router.add_get("/meeting/{id}/notion", candidates)
     app.router.add_post("/meeting/{id}/notion", send)
-    app.router.add_post("/ask", ask)
     app.router.add_post("/meeting/{id}/note", note)
     app.router.add_post("/meeting/{id}/email", write_email)
     app.router.add_put("/meeting/{id}/email", edit_email)
     app.router.add_post("/meeting/{id}/email/save", save_email)
     app.router.add_get("/followups", followups)
+    app.router.add_get("/learned", learned)
+    app.router.add_get("/topic", topic)
     app.router.add_post("/followups/remove", remove_followup)
     app.router.add_get("/search", search)
     app.router.add_post("/followups/done", set_followup)

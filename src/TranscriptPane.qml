@@ -44,10 +44,9 @@ Rectangle {
         MenuRow {
             text: qsTr("Ask the agent about this")
             onTriggered: {
-                win.showAgent()
-                meetingPane.agentPane.input.text = qsTr("About what %1 said at %2, “%3”: ").arg(lineMenu.line.speaker).arg(lineMenu.line.time.slice(0, 5)).arg(lineMenu.line.text)
-                meetingPane.agentPane.input.forceActiveFocus()
-                meetingPane.agentPane.input.cursorPosition = meetingPane.agentPane.input.text.length
+                const question = qsTr("About what %1 said at %2, “%3”: ").arg(lineMenu.line.speaker)
+                    .arg(lineMenu.line.time.slice(0, 5)).arg(lineMenu.line.text)
+                win.askAboutMeeting(question)
             }
         }
         // Whose voice it is, for a line told apart by voice.

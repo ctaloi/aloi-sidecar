@@ -6,8 +6,12 @@ import json
 import math
 import sys
 import time
+from pathlib import Path
 
 from aiohttp import web
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "engine"))
+import insights  # noqa: E402  (the real counting, over a made-up month)
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8779
 LINES = [
@@ -119,10 +123,108 @@ def followups():
     return sorted(out, key=lambda f: (-f["started"], f["index"]))
 
 
+# A made-up month behind the three meetings in the list, so Home's map and
+# digest have something to say. Each line: title, its topics, the gist, a
+# decision, a question, and who was invited.
+HISTORY = [
+    ("Harbor Logistics, porting review", ["Porting", "Carriers", "Harbor Logistics"],
+     "Four numbers left to port, all on the old carrier. Dana escalates the second stuck one.",
+     "Port the last four numbers in one batch", "Does the losing carrier need a fresh LOA?", ["Luis Ortega", "Dana Park"]),
+    ("Northwind Dental, kickoff", ["Onboarding", "Northwind Dental", "E911"],
+     "Northwind moves offices on the fourteenth; the main number and E911 address change that night.",
+     "Cut the main number over the night of the 13th", "Who updates the E911 address?", ["Amy Reed", "Sam Ortiz"]),
+    ("Spam-likely labels on outbound", ["Number Reputation", "Caller ID", "Carriers"],
+     "Three customers report outbound calls labeled spam likely. Registration is missing on the newer numbers.",
+     "Register every new outbound number before it's used", "Which analytics vendor flags us most?", ["Dana Park", "Kim Hale"]),
+    ("Softphone beta check-in", ["Softphone", "Support"],
+     "The beta build is stable on desktop; mobile still drops audio on a network change.",
+     "Hold the mobile release a week", "Is the audio drop ours or the carrier's?", ["Kim Hale", "Raj Patel"]),
+    ("Weekly operations", ["Porting", "Support", "Softphone"],
+     "Porting queue down to six, tickets steady, softphone beta on track for Thursday.",
+     "The softphone build goes to beta on Thursday", "Do the stuck ports need a new LOA?", ["Dana Park"]),
+    ("Pricing review", ["Pricing", "Sales", "Billing"],
+     "Seat pricing holds; conference phones move to a monthly rental with a two-year term.",
+     "Offer conference phones as a rental", "What's the buyout at month twelve?", ["Luis Ortega", "Mia Chen"]),
+    ("Caller ID registration with the carrier", ["Number Reputation", "Carriers", "Caller ID", "Compliance"],
+     "The carrier will bulk-register our outbound numbers if we send them weekly.",
+     "Send the carrier a weekly file of new numbers", "Does registration carry over on a port?", ["Raj Patel"]),
+    ("Texting campaign rules", ["Texting", "Compliance"],
+     "New campaigns need a registered brand first; two customers are sending without one.",
+     "Pause sending for unregistered brands", "How long does brand vetting take now?", ["Mia Chen", "Kim Hale"]),
+    ("Harbor Logistics, invoice questions", ["Billing", "Harbor Logistics"],
+     "Their October invoice doubled the port fees. A credit goes out with November's.",
+     "Credit the duplicate port fees", "Why did the fee post twice?", ["Luis Ortega"]),
+    ("Sales pipeline", ["Sales", "Pricing", "Onboarding"],
+     "Two dental groups close this month. Both want the cutover done on a weekend.",
+     "Weekend cutovers for both dental groups", "Do we have weekend coverage on the 21st?", ["Mia Chen", "Sam Ortiz"]),
+]
+EARLIER = []  # (meta, notes), as insights reads them
+for i in range(26):
+    title, tags, tldr, decided, asked, people = HISTORY[(i * 3) % len(HISTORY)]
+    back = 1 + i + i // 5 * 2  # days ago, with the weekends left out
+    start = NOW - back * 86400 - (i % 4) * 5400
+    EARLIER.append((
+        {"id": f"earlier-{i}", "title": title, "started": start, "ended": start + (18 + i % 5 * 9) * 60,
+         "state": "ended", "people": people, "notion": {"state": "sent"}, "skipped": False},
+        {"tldr": tldr, "tags": tags, "topics": [{"title": t + ", where it stands", "points": []} for t in tags[:2]],
+         "mine": [{"text": "Follow up", "done": i % 3 == 0}],
+         "decisions": [{"text": decided, "at": 1}], "questions": [{"text": asked, "at": 0}]}))
+
+
+def library():
+    """The listed meetings and the made-up month, as insights reads them."""
+    listed = []
+    for m in meetings():
+        w = wrapups.get(m["id"])
+        listed.append((m, (w.get("edited") or w.get("draft")) if w else None))
+    return listed + EARLIER
+
+
+def learned(days):
+    return insights.learned(library(), time.time(), days)
+
+
+async def get_topic(request):
+    found = insights.topic(library(), request.query.get("name", ""), time.time())
+    if not found:
+        raise web.HTTPNotFound()
+    return web.json_response({"topic": found})
+
+
+async def get_learned(request):
+    return web.json_response({"learned": learned(int(request.query.get("days", 30)))})
+
+
+bulk = {"running": False}
+
+
+async def send_all(request):
+    """Send all, as the real engine reports it: one at a time, each said as it goes."""
+    ids = [i for i in (await request.json()).get("ids", []) if i in wrapups and i not in notion]
+    if ids and not bulk.get("running"):
+        asyncio.create_task(_send_all(ids))
+    return web.json_response({"taken": len(ids)})
+
+
+async def _send_all(ids):
+    def say(**changes):
+        bulk.update(changes)
+        for q in clients:
+            q.put_nowait({"type": "bulk", "bulk": dict(bulk)})
+    say(running=True, total=len(ids), done=0, failed=0, choose=[], ids=ids, current=None, sent=[], failures=[], finished=None)
+    for i in ids:
+        say(current=i)
+        await asyncio.sleep(1.2)
+        notion[i] = {"id": "n-" + i, "url": "https://www.notion.so/" + i, "state": "sent", "sent": time.time()}
+        announce()
+        say(done=bulk["done"] + 1, sent=bulk["sent"] + [i])
+    say(running=False, current=None, finished=time.time())
+
+
 def state_event():
     return {"type": "state", "listening": state["listening"], "current": current_id, "channels": [],
             "call": state["call"], "settings": state["settings"],
-            "followups_open": sum(1 for f in followups() if not f["done"])}
+            "followups_open": sum(1 for f in followups() if not f["done"]), "bulk": dict(bulk)}
 
 
 async def get_followups(request):
@@ -289,11 +391,13 @@ app.router.add_delete("/meeting/{id}", ok)
 app.router.add_patch("/settings", ok)
 app.router.add_post("/_call", set_call)
 app.router.add_get("/followups", get_followups)
+app.router.add_get("/learned", get_learned)
+app.router.add_get("/topic", get_topic)
 app.router.add_get("/search", search)
 app.router.add_post("/followups/sync", sync_followups)
 app.router.add_post("/followups/done", ok)
 app.router.add_post("/followups/flag", ok)
-app.router.add_post("/notion/bulk", ok)
+app.router.add_post("/notion/bulk", send_all)
 app.router.add_post("/followups/remove", get_followups)
 app.router.add_post("/meeting/{id}/email", ok)
 app.router.add_put("/meeting/{id}/email", ok)

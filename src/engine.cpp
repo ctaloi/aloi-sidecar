@@ -139,7 +139,7 @@ Engine::~Engine() {
 void Engine::connectToEngine() {
     if (m_stream)
         return;
-    QNetworkRequest request(m_url.resolved(QUrl("/events")));
+    QNetworkRequest request(m_url.resolved(QUrl("/events?interims=1")));
     request.setRawHeader("Accept", "text/event-stream");
     request.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::AlwaysNetwork);
     request.setTransferTimeout(0);
@@ -673,6 +673,42 @@ void Engine::fetchFollowups() {
             return;
         m_followups = QJsonDocument::fromJson(reply->readAll()).object().value("followups").toArray().toVariantList();
         emit followupsChanged();
+    });
+}
+
+void Engine::fetchLearned(int days) {
+    if (m_learnedFetch)  // a newer range wins over one still on its way
+        m_learnedFetch->abort();
+    QNetworkReply *reply = m_network.get(QNetworkRequest(m_url.resolved(QUrl(QString("/learned?days=%1").arg(days)))));
+    m_learnedFetch = reply;
+    connect(reply, &QNetworkReply::finished, this, [this, reply] {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError)
+            return;
+        m_learned = QJsonDocument::fromJson(reply->readAll()).object().value("learned").toObject().toVariantMap();
+        emit learnedChanged();
+    });
+}
+
+void Engine::fetchTopic(const QString &name) {
+    if (m_topicFetch)
+        m_topicFetch->abort();
+    if (m_topic.value("name").toString() != name) {  // not the last topic's notes under this one's name
+        m_topic = {{"name", name}, {"loading", true}};
+        emit topicChanged();
+    }
+    QUrl url = m_url.resolved(QUrl("/topic"));
+    url.setQuery(QUrlQuery{{"name", name}});
+    QNetworkReply *reply = m_network.get(QNetworkRequest(url));
+    m_topicFetch = reply;
+    connect(reply, &QNetworkReply::finished, this, [this, reply, name] {
+        reply->deleteLater();
+        if (reply->error() == QNetworkReply::OperationCanceledError)
+            return;
+        m_topic = QJsonDocument::fromJson(reply->readAll()).object().value("topic").toObject().toVariantMap();
+        if (m_topic.isEmpty())
+            m_topic = {{"name", name}};
+        emit topicChanged();
     });
 }
 
