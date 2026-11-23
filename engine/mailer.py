@@ -17,7 +17,7 @@ import wrapup
 
 MODEL = os.environ.get("SIDECAR_EMAIL_MODEL", "claude-opus-5-5")
 PROGRAM = os.environ.get("SIDECAR_EMAIL_CLAUDE", wrapup.PROGRAM)
-ME = os.environ.get("SIDECAR_ME_EMAIL", "caloi@vaspian.com")
+ME = os.environ.get("SIDECAR_ME_EMAIL", "")  # your address, left off the To line
 VOICE = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "skills/chris-voice/SKILL.md"
 SCHEMA = {"type": "object", "additionalProperties": False,
           "properties": {"subject": {"type": "string"}, "body": {"type": "string"}},

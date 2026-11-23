@@ -10,7 +10,7 @@ import uuid
 from aiohttp import web
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8790
-DATABASE = "21553fc0-1092-80f5-b264-e9a451b14cee"
+DATABASE = "f011ca00-0000-4000-8000-000000000000"
 FOLLOWUPS = "f011ca00-0000-4000-8000-000000000001"
 log = []
 pages = {}

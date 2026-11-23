@@ -1,4 +1,4 @@
-"""Sending a meeting to Chris's private "My Meetings" database in Notion.
+"""Sending a meeting to a private "My Meetings" database in Notion.
 
 The token is an internal integration's, kept in the keyring and shared with
 that database and the Follow-ups database beside it. Sending is built to survive being interrupted: the
@@ -14,10 +14,11 @@ import aiohttp
 
 API = os.environ.get("SIDECAR_NOTION_API", "https://api.notion.com/v1")
 VERSION = "2022-06-28"  # the version the database was read with; later ones change how databases work
-DATABASE = os.environ.get("SIDECAR_NOTION_DATABASE", "21553fc0-1092-80f5-b264-e9a451b14cee")
+# Both ids come from the environment (~/.config/aloi-sidecar/env for the service).
+DATABASE = os.environ.get("SIDECAR_NOTION_DATABASE", "")
 # One row per follow-up, each related to its meeting's page. Until it's shared
 # with the integration (⋯ → Connections), follow-ups stay to-dos on the page.
-FOLLOWUPS = os.environ.get("SIDECAR_NOTION_FOLLOWUPS", "40f53fc0-1092-8187-80c2-fd2f15fc115b")
+FOLLOWUPS = os.environ.get("SIDECAR_NOTION_FOLLOWUPS", "")
 BATCH = 100  # Notion's most children per request
 TEXT = 1900  # under Notion's 2,000 characters per rich-text item
 HEADING = "Sidecar notes"  # what Sidecar's part of a page it fills in sits under
@@ -137,6 +138,9 @@ class Notion:
         self.session = session
 
     async def call(self, method, path, json=None):
+        if not DATABASE:
+            raise NotionError("No Notion database set. Put SIDECAR_NOTION_DATABASE=<id> in "
+                              "~/.config/aloi-sidecar/env, then restart the engine.")
         if self.session is None:
             self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60))
         headers = {"Authorization": f"Bearer {await token()}", "Notion-Version": VERSION,

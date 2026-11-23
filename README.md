@@ -204,7 +204,14 @@ goes back. A capital is Shift (`C` is Shift+C); `g h` is g, then h.
   meeting's `wrapup.json`, sends them to Notion (`engine/notion.py`, with the
   integration token from the keyring: `secret-tool lookup service
   aloi-sidecar account notion`), and watches PipeWire for calls
-  (`engine/calls.py`). Settings live in `~/.config/aloi-sidecar/settings.json`.
+  (`engine/calls.py`). Settings live in `~/.config/aloi-sidecar/settings.json`;
+  your own ids live in `~/.config/aloi-sidecar/env`, which the service reads:
+
+  ```sh
+  SIDECAR_NOTION_DATABASE=<My Meetings database id>
+  SIDECAR_NOTION_FOLLOWUPS=<Follow-ups database id>   # optional
+  SIDECAR_ME_EMAIL=<you@example.com>                  # left off follow-up emails
+  ```
   It has no API key and no web page: every model call is `claude -p` on
   your login, and the app is the only way in.
 - `src/` is the app: C++ and Qt Quick, following the Omarchy theme live,

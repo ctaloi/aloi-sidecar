@@ -4,6 +4,8 @@ After=pipewire-pulse.service
 
 [Service]
 # Installed by bin/install with @ENGINE@ replaced by the engine's folder.
+# Your Notion ids and email, as KEY=value lines; optional.
+EnvironmentFile=-%h/.config/aloi-sidecar/env
 ExecStart=@ENGINE@/.venv/bin/python @ENGINE@/engine.py
 Restart=on-failure
 RestartSec=3

@@ -203,7 +203,7 @@ the page fits what's already there rather than a guessed schema.
 
 ## Notion: the real "My Meetings" database (read 2026-10-26)
 
-The integration token is in the keyring (`secret-tool lookup service aloi-sidecar account notion`) and sees one database: **My Meetings**, `21553fc0-1092-80f5-b264-e9a451b14cee`.
+The integration token is in the keyring (`secret-tool lookup service aloi-sidecar account notion`) and sees one database: **My Meetings**, whose id is `SIDECAR_NOTION_DATABASE`.
 
 Properties: `Meeting Title` (title), `Date` (date), `Summary` (text), `Duration` (text), `Topic` (text), `Met with` (multi-select of companies and people), `Tags` (multi-select, long and messy), `Format` (select: Video, Phone, In person), `Status` (select: published, no-transcript, external, failed), `Attendees`, `Internal Attendees` and `Organizer` (people), `Source` (url), `PlaudeAI` (checkbox), `Files & media`, `Meeting Date` (created time).
 
